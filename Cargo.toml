@@ -4,3 +4,4 @@ version = "0.1.0"
 authors = ["Cldfire"]
 
 [dependencies]
+structopt = "0.2"
