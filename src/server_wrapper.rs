@@ -2,8 +2,8 @@ use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
 use std::thread;
 
-use error::ServerError;
-use Opt;
+use crate::error::ServerError;
+use crate::Opt;
 
 /// Launch a minecraft server using the provided `Opt` struct containing arguments
 /// entered by the user.
@@ -29,7 +29,7 @@ pub fn start_server(opt: &Opt) -> Result<(), ServerError> {
             )
         ]).spawn().unwrap();
 
-    let mut stdin = process.stdin.unwrap();
+    let _stdin = process.stdin.unwrap();
     let stdout = BufReader::new(process.stdout.unwrap());
     let stderr = BufReader::new(process.stderr.unwrap());
     

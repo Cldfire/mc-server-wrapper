@@ -1,12 +1,10 @@
-extern crate structopt;
-
 use std::path::PathBuf;
 use std::fs::File;
 use std::io::Write;
 
 use structopt::StructOpt;
-use server_wrapper::start_server;
-use error::ServerError;
+use crate::server_wrapper::start_server;
+use crate::error::ServerError;
 
 mod server_wrapper;
 mod error;
