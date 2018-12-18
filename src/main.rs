@@ -8,6 +8,7 @@ use crate::error::ServerError;
 
 mod server_wrapper;
 mod error;
+mod parse;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "mc-wrapper")]

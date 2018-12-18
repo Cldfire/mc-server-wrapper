@@ -4,6 +4,7 @@ use std::thread;
 
 use crate::error::ServerError;
 use crate::Opt;
+use crate::parse::ConsoleMsg;
 
 /// Launch a minecraft server using the provided `Opt` struct containing arguments
 /// entered by the user.
@@ -38,8 +39,15 @@ pub fn start_server(opt: &Opt) -> Result<(), ServerError> {
         let mut ret = Ok(());
 
         for line in stdout.lines().map(|l| l.unwrap()) {
-            println!("{}", line);
-            if line.contains("You need to agree to the EULA in order to run the server. Go to eula.txt for more info.") {
+            let parsed = ConsoleMsg::parse_from(&line);
+            println!(
+                "[{}] [{:?}]: {}",
+                parsed.timestamp.format("%-I:%M:%S %p").to_string(),
+                parsed.msg_type,
+                parsed.msg
+            );
+
+            if parsed.msg == "You need to agree to the EULA in order to run the server. Go to eula.txt for more info." {
                 ret = Err(ServerError::EulaNotAccepted);
             }
         }
