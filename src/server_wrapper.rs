@@ -2,6 +2,8 @@ use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
 use std::thread;
 
+use indicatif::{ProgressBar, ProgressStyle};
+
 use crate::error::ServerError;
 use crate::Opt;
 use crate::parse::ConsoleMsgSpecific;
@@ -37,6 +39,10 @@ pub fn start_server(opt: &Opt) -> Result<(), ServerError> {
 
     let stdout_handle = thread::spawn(move || {
         let mut ret = Ok(());
+        let progress_bar = ProgressBar::new(100);
+        progress_bar.set_style(ProgressStyle::default_bar()
+            .template("{bar:30[>20]} {pos:>2}%")
+        );
 
         for line in stdout.lines().map(|l| l.unwrap()) {
             let parsed = ConsoleMsgSpecific::parse_from(&line);
@@ -50,7 +56,13 @@ pub fn start_server(opt: &Opt) -> Result<(), ServerError> {
                 ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
                 ConsoleMsgSpecific::PlayerLogin { generic_msg, .. } => println!("{}", generic_msg),
                 ConsoleMsgSpecific::PlayerMsg { generic_msg, .. } => println!("{}", generic_msg),
-                ConsoleMsgSpecific::SpawnPrepareProgress { generic_msg, .. } => println!("{}", generic_msg)
+                ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
+                    progress_bar.set_position(progress as u64);
+
+                    if progress == 100 {
+                        progress_bar.finish();
+                    }
+                }
             }
         }
 
