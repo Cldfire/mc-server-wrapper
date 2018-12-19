@@ -4,7 +4,7 @@ use std::thread;
 
 use crate::error::ServerError;
 use crate::Opt;
-use crate::parse::ConsoleMsg;
+use crate::parse::ConsoleMsgSpecific;
 
 /// Launch a minecraft server using the provided `Opt` struct containing arguments
 /// entered by the user.
@@ -39,16 +39,18 @@ pub fn start_server(opt: &Opt) -> Result<(), ServerError> {
         let mut ret = Ok(());
 
         for line in stdout.lines().map(|l| l.unwrap()) {
-            let parsed = ConsoleMsg::parse_from(&line);
-            println!(
-                "[{}] [{:?}]: {}",
-                parsed.timestamp.format("%-I:%M:%S %p").to_string(),
-                parsed.msg_type,
-                parsed.msg
-            );
+            let parsed = ConsoleMsgSpecific::parse_from(&line);
 
-            if parsed.msg == "You need to agree to the EULA in order to run the server. Go to eula.txt for more info." {
-                ret = Err(ServerError::EulaNotAccepted);
+            match parsed {
+                ConsoleMsgSpecific::GenericMsg(generic_msg) => println!("{}", generic_msg),
+                ConsoleMsgSpecific::MustAcceptEula(generic_msg) => {
+                    println!("{}", generic_msg);
+                    ret = Err(ServerError::EulaNotAccepted);
+                }
+                ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
+                ConsoleMsgSpecific::PlayerLogin { generic_msg, .. } => println!("{}", generic_msg),
+                ConsoleMsgSpecific::PlayerMsg { generic_msg, .. } => println!("{}", generic_msg),
+                ConsoleMsgSpecific::SpawnPrepareProgress { generic_msg, .. } => println!("{}", generic_msg)
             }
         }
 
