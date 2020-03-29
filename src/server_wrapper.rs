@@ -10,7 +10,7 @@ use crate::parse::ConsoleMsgSpecific;
 
 /// Launch a minecraft server using the provided `Opt` struct containing arguments
 /// entered by the user.
-/// 
+///
 /// This is a blocking function that returns after the server child process has
 /// exited.
 pub fn start_server(opt: &Opt) -> Result<(), ServerError> {
@@ -45,7 +45,14 @@ pub fn start_server(opt: &Opt) -> Result<(), ServerError> {
         );
 
         for line in stdout.lines().map(|l| l.unwrap()) {
-            let parsed = ConsoleMsgSpecific::parse_from(&line);
+            let parsed = match ConsoleMsgSpecific::try_parse_from(&line) {
+                Some(msg) => msg,
+                None => {
+                    // spigot servers print lines that reach this branch
+                    println!("{}", line);
+                    continue;
+                }
+            };
 
             match parsed {
                 ConsoleMsgSpecific::GenericMsg(generic_msg) => println!("{}", generic_msg),

@@ -30,13 +30,13 @@ pub enum ConsoleMsgSpecific {
 
 impl ConsoleMsgSpecific {
     /// Constructs the appropriate `ConsoleMsgSpecific` variant from a line of console output.
-    pub fn parse_from(raw: &str) -> ConsoleMsgSpecific {
-        let parsed = ConsoleMsg::parse_from(raw);
+    pub fn try_parse_from(raw: &str) -> Option<ConsoleMsgSpecific> {
+        let parsed = ConsoleMsg::try_parse_from(raw)?;
 
         // Note that the order in which these conditions are tested is important:
         // we need to make sure that we are not dealing with a player message before
         // it is okay to test for other things, for instance
-        if parsed.thread_name.contains("User Authenticator") {
+        Some(if parsed.thread_name.contains("User Authenticator") {
             let (player, uuid) = {
                 // Get rid of "UUID of player "
                 let minus_start = &parsed.msg[15..];
@@ -119,7 +119,7 @@ impl ConsoleMsgSpecific {
         } else {
             // It wasn't anything specific we're looking for
             ConsoleMsgSpecific::GenericMsg(parsed)
-        }
+        })
     }
 }
 
@@ -143,17 +143,17 @@ impl fmt::Display for ConsoleMsg {
 
 impl ConsoleMsg {
     /// Constructs a `ConsoleMsg` from a line of console output.
-    fn parse_from(raw: &str) -> ConsoleMsg {
-        let (mut timestamp, remain) = raw.split_at(raw.find(']').unwrap());
+    fn try_parse_from(raw: &str) -> Option<ConsoleMsg> {
+        let (mut timestamp, remain) = raw.split_at(raw.find(']')?);
         timestamp = &timestamp[1..];
 
-        let (mut thread_name, remain) = remain.split_at(remain.find('/').unwrap());
+        let (mut thread_name, remain) = remain.split_at(remain.find('/')?);
         thread_name = &thread_name[3..];
 
-        let (mut msg_type, remain) = remain.split_at(remain.find(']').unwrap());
+        let (mut msg_type, remain) = remain.split_at(remain.find(']')?);
         msg_type = &msg_type[1..];
 
-        Self {
+        Some(Self {
             timestamp: NaiveTime::from_hms(
                 timestamp[..2].parse().unwrap(),
                 timestamp[3..5].parse().unwrap(),
@@ -162,7 +162,7 @@ impl ConsoleMsg {
             thread_name: thread_name.into(),
             msg_type: ConsoleMsgType::parse_from(msg_type),
             msg: remain[3..].into()
-        }
+        })
     }
 }
 
@@ -193,7 +193,7 @@ mod test {
     fn parse_warn_msg() {
         let msg = "[23:10:30] [main/WARN]: Ambiguity between arguments [teleport, targets, location] \
             and [teleport, targets, destination] with inputs: [0.1 -0.5 .9, 0 0 0]";
-        let msg_struct = ConsoleMsgSpecific::parse_from(msg);
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
             ConsoleMsgSpecific::GenericMsg(generic_msg) => {
@@ -212,7 +212,7 @@ mod test {
     #[test]
     fn parse_info_msg() {
         let msg = "[23:10:31] [Server thread/INFO]: Starting Minecraft server on *:25565";
-        let msg_struct = ConsoleMsgSpecific::parse_from(msg);
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
             ConsoleMsgSpecific::GenericMsg(generic_msg) => {
@@ -231,7 +231,7 @@ mod test {
     fn parse_must_accept_eula() {
         let msg = "[00:03:56] [Server thread/INFO]: You need to agree to the EULA in order to run the \
             server. Go to eula.txt for more info.";
-        let msg_struct = ConsoleMsgSpecific::parse_from(msg);
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
             ConsoleMsgSpecific::MustAcceptEula(generic_msg) => {
@@ -250,7 +250,7 @@ mod test {
     #[test]
     fn parse_player_msg() {
         let msg = "[23:12:39] [Server thread/INFO]: <Cldfire> hi!";
-        let msg_struct = ConsoleMsgSpecific::parse_from(msg);
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
             ConsoleMsgSpecific::PlayerMsg { generic_msg, player, player_msg } => {
@@ -272,7 +272,7 @@ mod test {
     fn parse_player_login() {
         let msg = "[23:11:12] [Server thread/INFO]: Cldfire[/127.0.0.1:56538] logged in with entity \
             id 121 at (-2.5, 63.0, 256.5)";
-        let msg_struct = ConsoleMsgSpecific::parse_from(msg);
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
             ConsoleMsgSpecific::PlayerLogin { generic_msg, player, ip, entity_id, coords } => {
@@ -297,7 +297,7 @@ mod test {
     fn parse_player_auth() {
         let msg = "[23:11:12] [User Authenticator #1/INFO]: UUID of player Cldfire is \
             361e5fb3-dbce-4f91-86b2-43423a4888d5";
-        let msg_struct = ConsoleMsgSpecific::parse_from(msg);
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
             ConsoleMsgSpecific::PlayerAuth { generic_msg, player, uuid } => {
@@ -319,7 +319,7 @@ mod test {
     #[test]
     fn parse_spawn_prepare_progress() {
         let msg = "[23:10:35] [Server thread/INFO]: Preparing spawn area: 44%";
-        let msg_struct = ConsoleMsgSpecific::parse_from(msg);
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
             ConsoleMsgSpecific::SpawnPrepareProgress { generic_msg, progress } => {

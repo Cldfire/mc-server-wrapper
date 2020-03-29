@@ -5,6 +5,6 @@ authors = ["Cldfire"]
 edition = "2018"
 
 [dependencies]
-structopt = "0.2"
+structopt = "0.3"
 chrono = "0.4"
-indicatif = "0.10"
+indicatif = "0.14"
