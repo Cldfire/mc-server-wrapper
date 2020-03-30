@@ -51,9 +51,10 @@ impl ConsoleMsgSpecific {
                 player,
                 uuid
             }
-        } else if parsed.msg_type == ConsoleMsgType::Info &&
-            parsed.msg.starts_with("<") &&
-            parsed.thread_name == "Server thread" {
+        } else if parsed.msg_type == ConsoleMsgType::Info && (
+                parsed.thread_name.starts_with("Async Chat Thread") ||
+                parsed.msg.starts_with("<") && parsed.thread_name == "Server thread"
+            ) {
                 let (player, player_msg) = {
                     let (player, remain) = parsed.msg.split_at(parsed.msg.find('>').unwrap());
 
@@ -258,6 +259,27 @@ mod test {
                 assert!(generic_msg.timestamp.minute() == 12);
                 assert!(generic_msg.timestamp.second() == 39);
                 assert!(generic_msg.thread_name == "Server thread");
+                assert!(generic_msg.msg_type == ConsoleMsgType::Info);
+                assert!(generic_msg.msg == "<Cldfire> hi!");
+
+                assert!(player == "Cldfire");
+                assert!(player_msg == "hi!");
+            }
+            _ => panic!("wrong variant")
+        }
+    }
+
+    #[test]
+    fn parse_player_msg_spigot() {
+        let msg = "[23:12:39] [Async Chat Thread - #8/INFO]: <Cldfire> hi!";
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
+
+        match msg_struct {
+            ConsoleMsgSpecific::PlayerMsg { generic_msg, player, player_msg } => {
+                assert!(generic_msg.timestamp.hour() == 23);
+                assert!(generic_msg.timestamp.minute() == 12);
+                assert!(generic_msg.timestamp.second() == 39);
+                assert!(generic_msg.thread_name == "Async Chat Thread - #8");
                 assert!(generic_msg.msg_type == ConsoleMsgType::Info);
                 assert!(generic_msg.msg == "<Cldfire> hi!");
 
