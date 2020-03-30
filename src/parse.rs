@@ -335,4 +335,17 @@ mod test {
             _ => panic!("wrong variant")
         }
     }
+
+    #[test]
+    fn parse_newline() {
+        let msg = "\n";
+        assert!(ConsoleMsgSpecific::try_parse_from(msg).is_none());
+    }
+
+    #[test]
+    fn parse_loading_libraries() {
+        // spigot prints this non-standard line without a timestamp
+        let msg = "Loading libraries, please wait...";
+        assert!(ConsoleMsgSpecific::try_parse_from(msg).is_none());
+    }
 }
