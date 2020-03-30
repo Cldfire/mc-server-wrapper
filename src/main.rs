@@ -1,9 +1,11 @@
 use std::path::PathBuf;
-use std::fs::File;
-use std::io::Write;
+use std::io;
+
+use tokio::fs::File;
+use tokio::prelude::*;
 
 use structopt::StructOpt;
-use crate::server_wrapper::start_server;
+use crate::server_wrapper::run_server;
 use crate::error::ServerError;
 
 mod server_wrapper;
@@ -23,21 +25,33 @@ pub struct Opt {
 }
 
 /// Overwrites the `eula.txt` file with the contents `eula=true`.
-// TODO: Error handling
-fn agree_to_eula(opt: &Opt) {
-    println!("Agreeing to EULA!");
-    let mut file = File::create(opt.server_path.parent().unwrap().join("eula.txt")).unwrap();
-    file.write_all(b"eula=true").unwrap();
+async fn agree_to_eula(opt: &Opt) -> io::Result<()> {
+    let mut file = File::create(opt.server_path.parent().unwrap().join("eula.txt")).await?;
+    file.write_all(b"eula=true").await
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let opt = Opt::from_args();
 
     loop {
-        match start_server(&opt) {
-            Ok(()) => break,
+        match run_server(&opt).await {
+            Ok(status) => if status.success() {
+                break;
+            } else {
+                println!("Restarting server...");
+            },
             Err(ServerError::EulaNotAccepted) => {
-                agree_to_eula(&opt);
+                println!("Agreeing to EULA!");
+                if let Err(e) = agree_to_eula(&opt).await {
+                    println!("Failed to agree to EULA: {:?}", e);
+                    break;
+                }
+            },
+            Err(ServerError::StdErr(_)) => {
+                println!("Fatal error believed to have been encountered, not \
+                            restarting server");
+                break;
             }
         }
     }

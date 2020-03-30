@@ -1,6 +1,8 @@
-use std::process::{Command, Stdio};
-use std::io::{BufRead, BufReader};
-use std::thread;
+use tokio::prelude::*;
+use tokio::process::Command;
+use tokio::io::BufReader;
+
+use std::process::{Stdio, ExitStatus};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -8,17 +10,14 @@ use crate::error::ServerError;
 use crate::Opt;
 use crate::parse::ConsoleMsgSpecific;
 
-/// Launch a minecraft server using the provided `Opt` struct containing arguments
+/// Run a minecraft server using the provided `Opt` struct containing arguments
 /// entered by the user.
-///
-/// This is a blocking function that returns after the server child process has
-/// exited.
-pub fn start_server(opt: &Opt) -> Result<(), ServerError> {
+pub async fn run_server(opt: &Opt) -> Result<ExitStatus, ServerError> {
     let folder = opt.server_path.as_path().parent().unwrap();
     let file = opt.server_path.file_name().unwrap();
 
-    let process = Command::new("sh")
-        .stdin(Stdio::piped())
+    let mut process = Command::new("sh")
+        .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .args(&[
@@ -32,28 +31,43 @@ pub fn start_server(opt: &Opt) -> Result<(), ServerError> {
             )
         ]).spawn().unwrap();
 
-    let _stdin = process.stdin.unwrap();
-    let stdout = BufReader::new(process.stdout.unwrap());
-    let stderr = BufReader::new(process.stderr.unwrap());
-    
+    let mut stdout = BufReader::new(process.stdout.take().unwrap()).lines();
+    let mut stderr = BufReader::new(process.stderr.take().unwrap()).lines();
 
-    let stdout_handle = thread::spawn(move || {
+    let status_handle = tokio::spawn(async {
+        process.await.expect("child process encountered an error")
+    });
+
+    let stderr_handle = tokio::spawn(async move {
+        let mut lines = Vec::new();
+
+        while let Some(line) = stderr.next_line().await.unwrap() {
+            println!("ERR: {}", &line);
+            lines.push(line);
+        }
+
+        lines
+    });
+
+    let stdout_handle = tokio::spawn(async move {
         let mut ret = Ok(());
+
         let progress_bar = ProgressBar::new(100);
         progress_bar.set_style(ProgressStyle::default_bar()
             .template("{bar:30[>20]} {pos:>2}%")
         );
 
-        for line in stdout.lines().map(|l| l.unwrap()) {
+        while let Some(line) = stdout.next_line().await.unwrap() {
             let parsed = match ConsoleMsgSpecific::try_parse_from(&line) {
                 Some(msg) => msg,
                 None => {
-                    // spigot servers print lines that reach this branch
+                    // spigot servers print lines that reach this branch ("\n",
+                    // "Loading libraries, please wait...")
                     println!("{}", line);
                     continue;
                 }
             };
-
+    
             match parsed {
                 ConsoleMsgSpecific::GenericMsg(generic_msg) => println!("{}", generic_msg),
                 ConsoleMsgSpecific::MustAcceptEula(generic_msg) => {
@@ -76,14 +90,20 @@ pub fn start_server(opt: &Opt) -> Result<(), ServerError> {
         ret
     });
 
-    let stderr_handle = thread::spawn(|| {
-        for line in stderr.lines() {
-            println!("ERR: {}", line.unwrap());
-        }
-    });
+    let (status, stdout_val, stderr_val) = tokio::join!(
+        status_handle,
+        stdout_handle,
+        stderr_handle
+    );
 
-    let ret = stdout_handle.join().unwrap();
-    stderr_handle.join().unwrap();
-
-    ret
+    // If we received lines from the server's stderr, we treat those as more important
+    // than anything else and return an error containing them
+    //
+    // This will need to be revised if any MC servers use stderr for anything
+    // that would not prevent the server from being restarted.
+    if stderr_val.as_ref().unwrap().len() > 0 {
+        Err(ServerError::StdErr(stderr_val.unwrap()))
+    } else {
+        stdout_val.unwrap().map(|_| status.unwrap())
+    }
 }
