@@ -56,7 +56,12 @@ impl ConsoleMsgSpecific {
                 parsed.msg.starts_with("<") && parsed.thread_name == "Server thread"
             ) {
                 let (player, player_msg) = {
-                    let (player, remain) = parsed.msg.split_at(parsed.msg.find('>').unwrap());
+                    let (player, remain) = parsed.msg.split_at(if let Some(idx) = parsed.msg.find('>') {
+                        idx
+                    } else {
+                        // This is not a player message, return a generic one
+                        return Some(ConsoleMsgSpecific::GenericMsg(parsed));
+                    });
 
                     // Trim "<" from the player's name and "> " from the msg
                     (player[1..].to_string(), remain[2..].to_string())
@@ -369,5 +374,17 @@ mod test {
         // spigot prints this non-standard line without a timestamp
         let msg = "Loading libraries, please wait...";
         assert!(ConsoleMsgSpecific::try_parse_from(msg).is_none());
+    }
+
+    #[test]
+    fn parse_blank_here() {
+        // somehow occurs when rapidly firing unknown commands
+        let msg = "[19:23:04] [Server thread/INFO]: <--[HERE]";
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
+
+        match msg_struct {
+            ConsoleMsgSpecific::GenericMsg(_) => {},
+            _ => panic!("wrong variant")
+        }
     }
 }
