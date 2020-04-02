@@ -2,6 +2,16 @@
 
 WIP Rust program to run a Java Minecraft server (vanilla, Spigot, or PaperSpigot), providing niceties such as restart-on-crash and improved console output.
 
+## Discord bridge setup
+
+Register an application and a bot with [Discord](https://discordapp.com/developers/applications). Provide the bot token either through the CLI, through the evironment variable `DISCORD_TOKEN`, or inside of a `.env` file containing the following:
+
+```
+DISCORD_TOKEN="..."
+```
+
+See [dotenv](https://github.com/dotenv-rs/dotenv) for more.
+
 ## Current status
 
 * Run server with configurable memory allocation

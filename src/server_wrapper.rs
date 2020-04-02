@@ -3,16 +3,27 @@ use tokio::process::Command;
 use tokio::io::BufReader;
 
 use std::process::{Stdio, ExitStatus};
+use std::sync::Arc;
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::error::ServerError;
+use twilight::{
+    gateway::Cluster,
+    http::Client as DiscordClient,
+    model::id::ChannelId
+};
+
+use crate::error::*;
 use crate::Opt;
 use crate::parse::ConsoleMsgSpecific;
 
 /// Run a minecraft server using the provided `Opt` struct containing arguments
 /// entered by the user.
-pub async fn run_server(opt: &Opt) -> Result<ExitStatus, ServerError> {
+pub async fn run_server(
+    opt: &Opt,
+    discord_client: Option<Arc<DiscordClient>>,
+    discord_cluster: Option<Arc<Cluster>>
+) -> Result<ExitStatus, ServerError> {
     let folder = opt.server_path.as_path().parent().unwrap();
     let file = opt.server_path.file_name().unwrap();
 
@@ -76,7 +87,20 @@ pub async fn run_server(opt: &Opt) -> Result<ExitStatus, ServerError> {
                 }
                 ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
                 ConsoleMsgSpecific::PlayerLogin { generic_msg, .. } => println!("{}", generic_msg),
-                ConsoleMsgSpecific::PlayerMsg { generic_msg, .. } => println!("{}", generic_msg),
+                ConsoleMsgSpecific::PlayerMsg { generic_msg, player, player_msg } => {
+                    println!("{}", generic_msg);
+
+                    if let Some(discord_client) = discord_client.clone() {
+                        // TODO: error handling
+                        tokio::spawn(async move {
+                            discord_client
+                                // TODO: don't hardcode
+                                .create_message(ChannelId(694351655667367957))
+                                .content("**".to_string() + &player + "**: " + &player_msg)
+                                .await
+                        });
+                    }
+                },
                 ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
                     progress_bar.set_position(progress as u64);
 

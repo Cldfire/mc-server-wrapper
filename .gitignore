@@ -2,3 +2,4 @@
 **/*.rs.bk
 /test-server
 .ds_store
+.env
