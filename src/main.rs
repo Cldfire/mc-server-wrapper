@@ -107,30 +107,32 @@ fn main() -> Result<(), Error> {
     
         loop {
             let (servercmd_sender, servercmd_receiver) = mpsc::channel::<ServerCommand>(32);
-
-            let cluster_clone = discord_cluster.as_ref().unwrap().clone();
-            let client_clone = discord_client.as_ref().unwrap().clone();
-            let servercmd_sender_clone = servercmd_sender.clone();
-
-            tokio::spawn(async move {
-                // For all received Discord events, map the event to a `ServerCommand`
-                // (if necessary) and forward it to the `server_cmd` sender
-                let mut events = cluster_clone.events().await;
-                while let Some(e) = events.next().await {
-                    let client_clone = client_clone.clone();
-                    let mut servercmd_sender_clone = servercmd_sender_clone.clone();
-
-                    tokio::spawn(async move {
-                        match handle_discord_event(e, client_clone).await {
-                            Ok(Some(cmd)) => {
-                                let _ = servercmd_sender_clone.send(cmd).await;
-                            },
-                            // TODO: error handling
-                            _ => {}
-                        }
-                    });
-                }
-            });
+            
+            if opt.bridge_to_discord {
+                let cluster_clone = discord_cluster.as_ref().unwrap().clone();
+                let client_clone = discord_client.as_ref().unwrap().clone();
+                let servercmd_sender_clone = servercmd_sender.clone();
+    
+                tokio::spawn(async move {
+                    // For all received Discord events, map the event to a `ServerCommand`
+                    // (if necessary) and forward it to the `server_cmd` sender
+                    let mut events = cluster_clone.events().await;
+                    while let Some(e) = events.next().await {
+                        let client_clone = client_clone.clone();
+                        let mut servercmd_sender_clone = servercmd_sender_clone.clone();
+    
+                        tokio::spawn(async move {
+                            match handle_discord_event(e, client_clone).await {
+                                Ok(Some(cmd)) => {
+                                    let _ = servercmd_sender_clone.send(cmd).await;
+                                },
+                                // TODO: error handling
+                                _ => {}
+                            }
+                        });
+                    }
+                });
+            }
 
             match run_server(
                 &opt,
