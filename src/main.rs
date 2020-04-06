@@ -2,11 +2,12 @@ use std::path::PathBuf;
 use std::io;
 use std::env;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
-use futures::StreamExt;
+use futures::{SinkExt, StreamExt};
 use futures::channel::mpsc;
 
 use twilight::{
@@ -101,32 +102,37 @@ fn main() -> Result<(), Error> {
         }
     
         loop {
-            let (servercmd_sender, servercmd_receiver) = mpsc::channel(32);
+            let (servercmd_sender, servercmd_receiver) = mpsc::channel::<ServerCommand>(32);
 
             let cluster_clone = discord_cluster.as_ref().unwrap().clone();
             let client_clone = discord_client.as_ref().unwrap().clone();
+            let servercmd_sender_clone = servercmd_sender.clone();
 
             tokio::spawn(async move {
                 // For all received Discord events, map the event to a `ServerCommand`
                 // (if necessary) and forward it to the `server_cmd` sender
-                // TODO: improved error handling?
-                // TODO: currently sends all events to the sender, even if they
-                // don't result in commands
-                cluster_clone
-                    .clone()
-                    .events()
-                    .await
-                    .map(|e| handle_discord_event(e, client_clone.clone()))
-                    .map(Ok)
-                    .forward(servercmd_sender)
-                    .await
-                    .unwrap();
+                let mut events = cluster_clone.events().await;
+                while let Some(e) = events.next().await {
+                    let client_clone = client_clone.clone();
+                    let mut servercmd_sender_clone = servercmd_sender_clone.clone();
+
+                    tokio::spawn(async move {
+                        match handle_discord_event(e, client_clone).await {
+                            Ok(Some(cmd)) => {
+                                let _ = servercmd_sender_clone.send(cmd).await;
+                            },
+                            // TODO: error handling
+                            _ => {}
+                        }
+                    });
+                }
             });
 
             match run_server(
                 &opt,
                 discord_client.clone(),
                 discord_cluster.clone(),
+                servercmd_sender.clone(),
                 servercmd_receiver
             ).await {
                 Ok(status) => if status.success() {
@@ -150,5 +156,7 @@ fn main() -> Result<(), Error> {
         }
     });
 
+    // TODO: we need this because the way tokio handles stdin involves blocking
+    rt.shutdown_timeout(Duration::from_millis(5));
     Ok(())
 }

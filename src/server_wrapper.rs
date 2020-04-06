@@ -1,9 +1,8 @@
 use tokio::prelude::*;
 use tokio::process::Command;
 use tokio::io::BufReader;
-use futures::StreamExt;
-use futures::future::Future;
-use futures::channel::mpsc::Receiver;
+use futures::{StreamExt, SinkExt};
+use futures::channel::mpsc::{Sender, Receiver};
 
 use std::process::{Stdio, ExitStatus};
 use std::sync::Arc;
@@ -27,8 +26,8 @@ pub async fn run_server(
     opt: &Opt,
     discord_client: Option<Arc<DiscordClient>>,
     _discord_cluster: Option<Arc<Cluster>>,
-    // TODO: get rid of the `Future` in this type
-    mut servercmd_receiver: Receiver<impl Future<Output=Result<Option<ServerCommand>, Error>> + Send + 'static>
+    mut servercmd_sender: Sender<ServerCommand>,
+    mut servercmd_receiver: Receiver<ServerCommand>
 ) -> Result<ExitStatus, ServerError> {
     let folder = opt.server_path.as_path().parent().unwrap();
     let file = opt.server_path.file_name().unwrap();
@@ -48,6 +47,7 @@ pub async fn run_server(
             )
         ]).spawn().unwrap();
     
+    let mut our_stdin = BufReader::new(tokio::io::stdin()).lines();
     let mut stdin = process.stdin.take().unwrap();
     let mut stdout = BufReader::new(process.stdout.take().unwrap()).lines();
     let mut stderr = BufReader::new(process.stderr.take().unwrap()).lines();
@@ -121,24 +121,34 @@ pub async fn run_server(
         ret
     });
 
-    tokio::spawn(async move {
-        while let Some(cmd) = servercmd_receiver.next().await {
-            let cmd = cmd.await;
-
-            if let Ok(Some(cmd)) = cmd {
-                match cmd {
-                    ServerCommand::SendChatMsg(msg) => {
-                        let _ = stdin.write_all(("tellraw @a [\"".to_string() + "[Discord] " + &msg + "\"]\n").as_bytes()).await;
-
-                        // TODO: This will not add the message to the server logs
-                        println!("{}", ConsoleMsg {
-                            timestamp: chrono::offset::Local::now().naive_local().time(),
-                            thread_name: "".into(),
-                            msg_type: ConsoleMsgType::Info,
-                            msg: "[Discord] ".to_string() + &msg
-                        });
+    let input_handle = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                Some(cmd) = servercmd_receiver.next() => {
+                    match cmd {
+                        ServerCommand::SendChatMsg(msg) => {
+                            let _ = stdin.write_all(("tellraw @a [\"".to_string() + "[Discord] " + &msg + "\"]\n").as_bytes()).await;
+    
+                            // TODO: This will not add the message to the server logs
+                            println!("{}", ConsoleMsg {
+                                timestamp: chrono::offset::Local::now().naive_local().time(),
+                                thread_name: "".into(),
+                                msg_type: ConsoleMsgType::Info,
+                                msg: "[Discord] ".to_string() + &msg
+                            });
+                        },
+                        ServerCommand::ServerClosed => break
                     }
-                }
+                },
+
+                Some(line) = our_stdin.next() => {
+                    if let Ok(line) = line {
+                        let _ = stdin.write_all((line + "\n").as_bytes()).await;
+                    } else {
+                        break;
+                    }
+                },
+                else => break,
             }
         }
     });
@@ -148,6 +158,9 @@ pub async fn run_server(
         stdout_handle,
         stderr_handle,
     );
+
+    servercmd_sender.send(ServerCommand::ServerClosed).await.unwrap();
+    let _ = input_handle.await;
 
     // If we received lines from the server's stderr, we treat those as more important
     // than anything else and return an error containing them
