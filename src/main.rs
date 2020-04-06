@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::io;
 use std::env;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::fs::File;
 use tokio::prelude::*;
@@ -104,7 +104,9 @@ fn main() -> Result<(), Error> {
             discord_client = None;
             discord_cluster = None;
         }
-    
+
+        let mut prev_stderr_output = vec![];
+        let mut last_start_time;
         loop {
             let (servercmd_sender, servercmd_receiver) = mpsc::channel::<ServerCommand>(32);
             
@@ -134,6 +136,7 @@ fn main() -> Result<(), Error> {
                 });
             }
 
+            last_start_time = Instant::now();
             match run_server(
                 &opt,
                 discord_client.clone(),
@@ -141,10 +144,25 @@ fn main() -> Result<(), Error> {
                 servercmd_sender.clone(),
                 servercmd_receiver
             ).await {
-                Ok(status) => if status.success() {
+                Ok((status, stderr_output)) => if status.success() {
                     break;
                 } else {
-                    println!("Restarting server...");
+                    // There are circumstances where the status will be failure
+                    // and attempting to restart the server will always fail. We
+                    // attempt to catch these cases by saving the stderr output
+                    // from the last time we had to restart after failure and
+                    // not restarting if the output is the same within a time
+                    // window
+                    // TODO: this is naive but will have to do for now
+                    if stderr_output == prev_stderr_output &&
+                        last_start_time.elapsed().as_secs() < 60 {
+                        println!("Fatal error believed to have been encountered, not \
+                            restarting server");
+                        break;
+                    } else {
+                        prev_stderr_output = stderr_output;
+                        println!("Restarting server...")
+                    }
                 },
                 Err(ServerError::EulaNotAccepted) => {
                     println!("Agreeing to EULA!");
@@ -152,11 +170,6 @@ fn main() -> Result<(), Error> {
                         println!("Failed to agree to EULA: {:?}", e);
                         break;
                     }
-                },
-                Err(ServerError::StdErrMsg(_)) => {
-                    println!("Fatal error believed to have been encountered, not \
-                                restarting server");
-                    break;
                 },
                 Err(ServerError::DiscordChannelIdNotSet) => {
                     println!("You enabled the Discord bridge but did not set the \

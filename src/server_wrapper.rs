@@ -23,13 +23,15 @@ use crate::command::ServerCommand;
 
 /// Run a minecraft server using the provided `Opt` struct containing arguments
 /// entered by the user.
+///
+/// Returns a tuple of (ExitStatus of server, lines from server stderr).
 pub async fn run_server(
     opt: &Opt,
     discord_client: Option<Arc<DiscordClient>>,
     _discord_cluster: Option<Arc<Cluster>>,
     mut servercmd_sender: Sender<ServerCommand>,
     mut servercmd_receiver: Receiver<ServerCommand>
-) -> Result<ExitStatus, ServerError> {
+) -> Result<(ExitStatus, Vec<String>), ServerError> {
     let folder = opt.server_path.as_path().parent().unwrap();
     let file = opt.server_path.file_name().unwrap();
     let discord_channel_id = if opt.bridge_to_discord {
@@ -174,14 +176,5 @@ pub async fn run_server(
     servercmd_sender.send(ServerCommand::ServerClosed).await.unwrap();
     let _ = input_handle.await;
 
-    // If we received lines from the server's stderr, we treat those as more important
-    // than anything else and return an error containing them
-    //
-    // This will need to be revised if any MC servers use stderr for anything
-    // that would not prevent the server from being restarted.
-    if stderr_val.as_ref().unwrap().len() > 0 {
-        Err(ServerError::StdErrMsg(stderr_val.unwrap()))
-    } else {
-        stdout_val.unwrap().map(|_| status.unwrap())
-    }
+    stdout_val.unwrap().map(|_| (status.unwrap(), stderr_val.unwrap()))
 }
