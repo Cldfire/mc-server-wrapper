@@ -119,14 +119,17 @@ pub async fn run_server(
                 },
                 ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
                     progress_bar.set_position(progress as u64);
-
-                    if progress == 100 {
-                        progress_bar.finish();
-                    }
+                },
+                ConsoleMsgSpecific::SpawnPrepareFinish { time_elapsed_ms, .. } => {
+                    progress_bar.finish_and_clear();
+                    println!("  (finished in {} ms)", time_elapsed_ms);
                 }
             }
         }
 
+        if !progress_bar.is_finished() {
+            progress_bar.finish_and_clear();
+        }
         ret
     });
 

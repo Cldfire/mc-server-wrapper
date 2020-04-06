@@ -1,6 +1,9 @@
 use chrono::NaiveTime;
 use std::fmt;
 
+// TODO: It would be nice to not have the `ConsoleMsg` in every variant
+// however, strategies for doing so make it difficult to use `?` in
+// `ConsoleMsgSpecific::try_parse_from`...
 #[derive(Debug)]
 pub enum ConsoleMsgSpecific {
     GenericMsg(ConsoleMsg),
@@ -25,11 +28,16 @@ pub enum ConsoleMsgSpecific {
     SpawnPrepareProgress {
         generic_msg: ConsoleMsg,
         progress: u8
+    },
+    SpawnPrepareFinish {
+        generic_msg: ConsoleMsg,
+        time_elapsed_ms: u64
     }
 }
 
 impl ConsoleMsgSpecific {
-    /// Constructs the appropriate `ConsoleMsgSpecific` variant from a line of console output.
+    /// Tries to determine a `ConsoleMsgSpecific` variant for a line of console
+    /// output.
     pub fn try_parse_from(raw: &str) -> Option<ConsoleMsgSpecific> {
         let parsed = ConsoleMsg::try_parse_from(raw)?;
 
@@ -122,6 +130,15 @@ impl ConsoleMsgSpecific {
                     generic_msg: parsed,
                     progress
                 }
+        } else if parsed.msg.contains("Time elapsed: ") {
+            let time_elapsed_ms = parsed.msg[
+                parsed.msg.find(':').unwrap() + 2..parsed.msg.find("ms").unwrap() - 1
+            ].parse().unwrap();
+
+            ConsoleMsgSpecific::SpawnPrepareFinish {
+                generic_msg: parsed,
+                time_elapsed_ms
+            }
         } else {
             // It wasn't anything specific we're looking for
             ConsoleMsgSpecific::GenericMsg(parsed)
@@ -358,6 +375,20 @@ mod test {
                 assert!(generic_msg.msg == "Preparing spawn area: 44%");
 
                 assert!(progress == 44);
+            }
+            _ => panic!("wrong variant")
+        }
+    }
+
+    #[test]
+    fn parse_spawn_prepare_finished() {
+        let msg = "[23:10:35] [Server thread/INFO]: Time elapsed: 3292 ms";
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
+
+        match msg_struct {
+            ConsoleMsgSpecific::SpawnPrepareFinish { generic_msg, time_elapsed_ms } => {
+                assert_eq!(generic_msg.msg, "Time elapsed: 3292 ms");
+                assert_eq!(time_elapsed_ms, 3292);
             }
             _ => panic!("wrong variant")
         }
