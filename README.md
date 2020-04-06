@@ -1,23 +1,25 @@
-# mc-wrapper
+# mc-server-wrapper
 
-WIP Rust program to run a Java Minecraft server (vanilla, Spigot, or PaperSpigot), providing niceties such as restart-on-crash and improved console output.
-
-## Discord bridge setup
-
-Register an application and a bot with [Discord](https://discordapp.com/developers/applications). Provide the bot token either through the CLI, through the evironment variable `DISCORD_TOKEN`, or inside of a `.env` file containing the following:
-
-```
-DISCORD_TOKEN="..."
-```
-
-See [dotenv](https://github.com/dotenv-rs/dotenv) for more.
+WIP Rust program to run a Java Minecraft server (vanilla, Spigot, or PaperSpigot), providing niceties such as a Discord chat bridge, server restart-on-crash, and improved console output.
 
 ## Current status
 
+* Optionally enabled bi-directional Discord chat bridge (see [Discord Bridge Setup](#discord-bridge-setup))
 * Run server with configurable memory allocation
 * Restart server on crash
 * Auto-agree to EULA
 * Improved console output formatting
+
+## Discord bridge setup
+
+Register an application and a bot with [Discord](https://discordapp.com/developers/applications). Add the bot to the guild you want to bridge to and get the ID of the channel you want to bridge to (Google this for instructions). Provide the bot token and channel ID either through the CLI or through the evironment variables listed below:
+
+```
+DISCORD_TOKEN="..."
+DISCORD_CHANNEL_ID="..."
+```
+
+These environment variables can also be provided in a `.env` file of the above format. See [dotenv](https://github.com/dotenv-rs/dotenv) for more.
 
 ## Future plans
 
@@ -26,5 +28,4 @@ See [dotenv](https://github.com/dotenv-rs/dotenv) for more.
     * View online players
     * Chat from the web
     * Different levels of accounts (user, admin)
-* Discord bridge?
 * _further ideas here_
