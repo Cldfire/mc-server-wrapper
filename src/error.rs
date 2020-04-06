@@ -1,12 +1,12 @@
 /// General application errors
 #[derive(Debug)]
 pub enum Error {
-    DiscordError(twilight::http::Error),
+    DiscordErr(twilight::http::Error),
 }
 
 impl From<twilight::http::Error> for Error {
     fn from(err: twilight::http::Error) -> Self {
-        Self::DiscordError(err)
+        Self::DiscordErr(err)
     }
 }
 
@@ -18,5 +18,5 @@ pub enum ServerError {
     /// Something was received on stderr
     ///
     /// It is unlikely that it will be possible to restart the server after this
-    StdErr(Vec<String>)
+    StdErrMsg(Vec<String>)
 }

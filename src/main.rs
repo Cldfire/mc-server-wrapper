@@ -7,6 +7,7 @@ use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 use futures::StreamExt;
+use futures::channel::mpsc;
 
 use twilight::{
     gateway::{shard::Event, Cluster, ClusterConfig},
@@ -18,10 +19,12 @@ use dotenv::dotenv;
 use structopt::StructOpt;
 use crate::server_wrapper::run_server;
 use crate::error::*;
+use crate::command::ServerCommand;
 
-mod server_wrapper;
+mod command;
 mod error;
 mod parse;
+mod server_wrapper;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "mc-wrapper")]
@@ -51,27 +54,29 @@ async fn agree_to_eula(opt: &Opt) -> io::Result<()> {
 
 async fn handle_discord_event(
     event: (u64, Event),
-    discord_client: Arc<DiscordClient>,
-) -> Result<(), Error> {
+    _discord_client: Arc<DiscordClient>,
+) -> Result<Option<ServerCommand>, Error> {
     match event {
         (id, Event::Ready(_)) => {
             println!("Connected on shard {}", id);
-        }
+            Ok(None)
+        },
         (_, Event::MessageCreate(msg)) => {
             // TODO: maybe some bot chatter should be allowed through?
             if msg.kind == MessageType::Regular && !msg.author.bot {
-                // TODO: send message to mc server
+                Ok(Some(ServerCommand::SendChatMsg(msg.author.name.clone() + ": " + &msg.content)))
+            } else {
+                Ok(None)
             }
-        }
-        _ => {}
+        },
+        _ => { Ok(None) }
     }
-
-    Ok(())
 }
 
 fn main() -> Result<(), Error> {
     let mut rt = Runtime::new().unwrap();
 
+    // TODO: use proc macro instead if shutdown_timeout no longer needed
     rt.block_on(async {
         dotenv().ok();
         let mut opt = Opt::from_args();
@@ -90,23 +95,40 @@ fn main() -> Result<(), Error> {
             discord_cluster = Some(Arc::new(Cluster::new(cluster_config)));
             discord_cluster.as_ref().unwrap().up().await
                 .expect("Could not connect to Discord");
-
-            let cluster_clone = discord_cluster.as_ref().unwrap().clone();
-            let client_clone = discord_client.as_ref().unwrap().clone();
-
-            tokio::spawn(async move {
-                let mut events = cluster_clone.clone().events().await;
-                while let Some(event) = events.next().await {
-                    tokio::spawn(handle_discord_event(event, client_clone.clone()));
-                }
-            });
         } else {
             discord_client = None;
             discord_cluster = None;
         }
     
         loop {
-            match run_server(&opt, discord_client.clone(), discord_cluster.clone()).await {
+            let (servercmd_sender, servercmd_receiver) = mpsc::channel(32);
+
+            let cluster_clone = discord_cluster.as_ref().unwrap().clone();
+            let client_clone = discord_client.as_ref().unwrap().clone();
+
+            tokio::spawn(async move {
+                // For all received Discord events, map the event to a `ServerCommand`
+                // (if necessary) and forward it to the `server_cmd` sender
+                // TODO: improved error handling?
+                // TODO: currently sends all events to the sender, even if they
+                // don't result in commands
+                cluster_clone
+                    .clone()
+                    .events()
+                    .await
+                    .map(|e| handle_discord_event(e, client_clone.clone()))
+                    .map(Ok)
+                    .forward(servercmd_sender)
+                    .await
+                    .unwrap();
+            });
+
+            match run_server(
+                &opt,
+                discord_client.clone(),
+                discord_cluster.clone(),
+                servercmd_receiver
+            ).await {
                 Ok(status) => if status.success() {
                     break;
                 } else {
@@ -119,7 +141,7 @@ fn main() -> Result<(), Error> {
                         break;
                     }
                 },
-                Err(ServerError::StdErr(_)) => {
+                Err(ServerError::StdErrMsg(_)) => {
                     println!("Fatal error believed to have been encountered, not \
                                 restarting server");
                     break;

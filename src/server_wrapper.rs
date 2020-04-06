@@ -1,6 +1,9 @@
 use tokio::prelude::*;
 use tokio::process::Command;
 use tokio::io::BufReader;
+use futures::StreamExt;
+use futures::future::Future;
+use futures::channel::mpsc::Receiver;
 
 use std::process::{Stdio, ExitStatus};
 use std::sync::Arc;
@@ -15,20 +18,23 @@ use twilight::{
 
 use crate::error::*;
 use crate::Opt;
-use crate::parse::ConsoleMsgSpecific;
+use crate::parse::{ConsoleMsgSpecific, ConsoleMsg, ConsoleMsgType};
+use crate::command::ServerCommand;
 
 /// Run a minecraft server using the provided `Opt` struct containing arguments
 /// entered by the user.
 pub async fn run_server(
     opt: &Opt,
     discord_client: Option<Arc<DiscordClient>>,
-    discord_cluster: Option<Arc<Cluster>>
+    _discord_cluster: Option<Arc<Cluster>>,
+    // TODO: get rid of the `Future` in this type
+    mut servercmd_receiver: Receiver<impl Future<Output=Result<Option<ServerCommand>, Error>> + Send + 'static>
 ) -> Result<ExitStatus, ServerError> {
     let folder = opt.server_path.as_path().parent().unwrap();
     let file = opt.server_path.file_name().unwrap();
 
     let mut process = Command::new("sh")
-        .stdin(Stdio::inherit())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .args(&[
@@ -41,7 +47,8 @@ pub async fn run_server(
                 file.to_str().unwrap()
             )
         ]).spawn().unwrap();
-
+    
+    let mut stdin = process.stdin.take().unwrap();
     let mut stdout = BufReader::new(process.stdout.take().unwrap()).lines();
     let mut stderr = BufReader::new(process.stderr.take().unwrap()).lines();
 
@@ -114,10 +121,32 @@ pub async fn run_server(
         ret
     });
 
+    tokio::spawn(async move {
+        while let Some(cmd) = servercmd_receiver.next().await {
+            let cmd = cmd.await;
+
+            if let Ok(Some(cmd)) = cmd {
+                match cmd {
+                    ServerCommand::SendChatMsg(msg) => {
+                        let _ = stdin.write_all(("tellraw @a [\"".to_string() + "[Discord] " + &msg + "\"]\n").as_bytes()).await;
+
+                        // TODO: This will not add the message to the server logs
+                        println!("{}", ConsoleMsg {
+                            timestamp: chrono::offset::Local::now().naive_local().time(),
+                            thread_name: "".into(),
+                            msg_type: ConsoleMsgType::Info,
+                            msg: "[Discord] ".to_string() + &msg
+                        });
+                    }
+                }
+            }
+        }
+    });
+
     let (status, stdout_val, stderr_val) = tokio::join!(
         status_handle,
         stdout_handle,
-        stderr_handle
+        stderr_handle,
     );
 
     // If we received lines from the server's stderr, we treat those as more important
@@ -126,7 +155,7 @@ pub async fn run_server(
     // This will need to be revised if any MC servers use stderr for anything
     // that would not prevent the server from being restarted.
     if stderr_val.as_ref().unwrap().len() > 0 {
-        Err(ServerError::StdErr(stderr_val.unwrap()))
+        Err(ServerError::StdErrMsg(stderr_val.unwrap()))
     } else {
         stdout_val.unwrap().map(|_| status.unwrap())
     }
