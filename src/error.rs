@@ -15,6 +15,8 @@ impl From<twilight::http::Error> for Error {
 pub enum ServerError {
     /// The server failed to start because the EULA has not been accepted
     EulaNotAccepted,
+    /// The `DISCORD_CHANNEL_ID` environment variable was not set
+    DiscordChannelIdNotSet,
     /// Something was received on stderr
     ///
     /// It is unlikely that it will be possible to restart the server after this

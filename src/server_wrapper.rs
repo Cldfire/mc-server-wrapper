@@ -6,6 +6,7 @@ use futures::channel::mpsc::{Sender, Receiver};
 
 use std::process::{Stdio, ExitStatus};
 use std::sync::Arc;
+use std::env;
 
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -31,6 +32,14 @@ pub async fn run_server(
 ) -> Result<ExitStatus, ServerError> {
     let folder = opt.server_path.as_path().parent().unwrap();
     let file = opt.server_path.file_name().unwrap();
+    let discord_channel_id = if opt.bridge_to_discord {
+        env::var("DISCORD_CHANNEL_ID")
+            .map_err(|_| ServerError::DiscordChannelIdNotSet)?
+            .parse()
+            .unwrap()
+    } else {
+        0
+    };
 
     let mut process = Command::new("sh")
         .stdin(Stdio::piped())
@@ -102,7 +111,7 @@ pub async fn run_server(
                         tokio::spawn(async move {
                             discord_client
                                 // TODO: don't hardcode
-                                .create_message(ChannelId(694351655667367957))
+                                .create_message(ChannelId(discord_channel_id))
                                 .content("**".to_string() + &player + "**: " + &player_msg)
                                 .await
                         });

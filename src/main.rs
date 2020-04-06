@@ -58,8 +58,12 @@ async fn handle_discord_event(
     _discord_client: Arc<DiscordClient>,
 ) -> Result<Option<ServerCommand>, Error> {
     match event {
-        (id, Event::Ready(_)) => {
-            println!("Connected on shard {}", id);
+        (_, Event::Ready(_)) => {
+            println!("Discord bridge online");
+            Ok(None)
+        },
+        (_, Event::GuildCreate(guild)) => {
+            println!("Connected to guild {}", guild.name);
             Ok(None)
         },
         (_, Event::MessageCreate(msg)) => {
@@ -150,6 +154,13 @@ fn main() -> Result<(), Error> {
                 Err(ServerError::StdErrMsg(_)) => {
                     println!("Fatal error believed to have been encountered, not \
                                 restarting server");
+                    break;
+                },
+                Err(ServerError::DiscordChannelIdNotSet) => {
+                    println!("You enabled the Discord bridge but did not set the \
+                            `DISCORD_CHANNEL_ID` environment variable; please \
+                            set it to the ID of the channel you want messages \
+                            bridged to");
                     break;
                 }
             }
