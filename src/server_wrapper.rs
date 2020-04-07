@@ -97,9 +97,20 @@ pub async fn run_server(
                 ConsoleMsgSpecific::MustAcceptEula(generic_msg) => {
                     println!("{}", generic_msg);
                     ret = Err(ServerError::EulaNotAccepted);
-                }
+                },
                 ConsoleMsgSpecific::PlayerLostConnection { generic_msg, .. } => println!("{}", generic_msg),
-                ConsoleMsgSpecific::PlayerLogout { generic_msg, .. } => println!("{}", generic_msg),
+                ConsoleMsgSpecific::PlayerLogout { generic_msg, name } => {
+                    println!("{}", generic_msg);
+
+                    if let Some(discord_client) = discord_client.clone() {
+                        tokio::spawn(async move {
+                            discord_client
+                                .create_message(ChannelId(discord_channel_id))
+                                .content("_**".to_string() + &name + "** left the game_")
+                                .await
+                        });
+                    }
+                },
                 ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
                 ConsoleMsgSpecific::PlayerLogin { generic_msg, name, .. } => {
                     println!("{}", generic_msg);

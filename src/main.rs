@@ -184,6 +184,7 @@ fn main() -> Result<(), Error> {
                     } else {
                         prev_stderr_output = stderr_output;
                         println!("Restarting server...")
+                        // TODO: tell discord that the mc server crashed
                     }
                 },
                 Err(ServerError::EulaNotAccepted) => {
