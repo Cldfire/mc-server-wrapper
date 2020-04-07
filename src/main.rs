@@ -76,7 +76,10 @@ async fn handle_discord_event(
         (_, Event::MessageCreate(msg)) => {
             // TODO: maybe some bot chatter should be allowed through?
             if msg.kind == MessageType::Regular && !msg.author.bot {
-                Ok(Some(ServerCommand::SendChatMsg(msg.author.name.clone() + ": " + &msg.content)))
+                Ok(Some(ServerCommand::SendDiscordMsg {
+                    username: msg.author.name.clone(),
+                    msg: msg.content.clone()
+                }))
             } else {
                 Ok(None)
             }
