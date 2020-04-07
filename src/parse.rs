@@ -18,7 +18,9 @@ pub enum ConsoleMsgSpecific {
         name: String,
         ip: String,
         entity_id: u32,
-        coords: (f32, f32, f32)
+        coords: (f32, f32, f32),
+        /// Present on Spigot servers
+        world: Option<String>
     },
     PlayerAuth {
         generic_msg: ConsoleMsg,
@@ -109,6 +111,14 @@ impl ConsoleMsgSpecific {
                 
                 // Get rid of " at (" in front and ")" behind
                 remain = &remain[5..remain.len() - 1];
+
+                let (world, remain) = if remain.starts_with('[') {
+                    // This is a Spigot server; parse world
+                    let (world, remain) = remain.split_at(remain.find(']').unwrap());
+                    (Some(world[1..].to_string()), &remain[1..])
+                } else {
+                    (None, remain)
+                };
                 
                 // `remain = &remain[2..]` is used to skip ", "
                 let (x_coord, mut remain) = remain.split_at(remain.find(',').unwrap());
@@ -127,7 +137,8 @@ impl ConsoleMsgSpecific {
                     name,
                     ip,
                     entity_id,
-                    coords: (x_coord, y_coord, z_coord)
+                    coords: (x_coord, y_coord, z_coord),
+                    world
                 }
         } else if parsed.msg.contains("Preparing spawn area: ") &&
             parsed.msg_type == ConsoleMsgType::Info {
@@ -345,7 +356,7 @@ mod test {
         let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
-            ConsoleMsgSpecific::PlayerLogin { generic_msg, name, ip, entity_id, coords } => {
+            ConsoleMsgSpecific::PlayerLogin { generic_msg, name, ip, entity_id, coords, world } => {
                 assert!(generic_msg.timestamp.hour() == 23);
                 assert!(generic_msg.timestamp.minute() == 11);
                 assert!(generic_msg.timestamp.second() == 12);
@@ -358,6 +369,28 @@ mod test {
                 assert!(ip == "127.0.0.1:56538");
                 assert!(entity_id == 121);
                 assert!(coords == (-2.5, 63.0, 256.5));
+                assert!(world.is_none());
+            }
+            _ => panic!("wrong variant")
+        }
+    }
+
+    #[test]
+    fn parse_player_login_spigot() {
+        let msg = "[23:11:12] [Server thread/INFO]: Cldfire[/127.0.0.1:56538] logged in with entity id 97 \
+            at ([world]8185.897723692287, 65.0, -330.1145592972985)";
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
+
+        match msg_struct {
+            ConsoleMsgSpecific::PlayerLogin { generic_msg, name, ip, entity_id, coords, world } => {
+                assert!(generic_msg.msg == "Cldfire[/127.0.0.1:56538] logged in with entity id 97 \
+                    at ([world]8185.897723692287, 65.0, -330.1145592972985)");
+
+                assert!(name == "Cldfire");
+                assert!(ip == "127.0.0.1:56538");
+                assert!(entity_id == 97);
+                assert!(coords == (8185.897723692287, 65.0, -330.1145592972985));
+                assert!(world.unwrap() == "world");
             }
             _ => panic!("wrong variant")
         }
