@@ -1,8 +1,10 @@
 # mc-server-wrapper
 
-WIP Rust program to run a Java Minecraft server (vanilla, Spigot, or PaperSpigot), providing niceties such as a Discord chat bridge, server restart-on-crash, and improved console output.
+Lightweight Rust program to run a Java Minecraft server (vanilla, Spigot, or PaperSpigot), providing niceties such as a Discord chat bridge, server restart-on-crash, and improved console output.
 
-## Current status
+Not production-ready, but getting there. Feel free to use it for non-critical servers, and please report issues!
+
+## Features
 
 * Optionally enabled bi-directional Discord chat bridge (see [Discord Bridge Setup](#discord-bridge-setup))
 * Run server with configurable memory allocation
