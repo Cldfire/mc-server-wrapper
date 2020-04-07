@@ -10,20 +10,29 @@ pub enum ConsoleMsgSpecific {
     MustAcceptEula(ConsoleMsg),
     PlayerMsg {
         generic_msg: ConsoleMsg,
-        player: String,
-        player_msg: String
+        name: String,
+        msg: String
     },
     PlayerLogin {
         generic_msg: ConsoleMsg,
-        player: String,
+        name: String,
         ip: String,
         entity_id: u32,
         coords: (f32, f32, f32)
     },
     PlayerAuth {
         generic_msg: ConsoleMsg,
-        player: String,
+        name: String,
         uuid: String
+    },
+    PlayerLogout {
+        generic_msg: ConsoleMsg,
+        name: String
+    },
+    PlayerLostConnection {
+        generic_msg: ConsoleMsg,
+        name: String,
+        reason: String
     },
     SpawnPrepareProgress {
         generic_msg: ConsoleMsg,
@@ -45,26 +54,26 @@ impl ConsoleMsgSpecific {
         // we need to make sure that we are not dealing with a player message before
         // it is okay to test for other things, for instance
         Some(if parsed.thread_name.contains("User Authenticator") {
-            let (player, uuid) = {
+            let (name, uuid) = {
                 // Get rid of "UUID of player "
                 let minus_start = &parsed.msg[15..];
-                let (player, remain) = minus_start.split_at(minus_start.find(' ').unwrap());
+                let (name, remain) = minus_start.split_at(minus_start.find(' ').unwrap());
 
                 // Slice `remain` to get rid of " is "
-                (player.to_string(), remain[4..].to_string())
+                (name.to_string(), remain[4..].to_string())
             };
 
             ConsoleMsgSpecific::PlayerAuth {
                 generic_msg: parsed,
-                player,
+                name,
                 uuid
             }
         } else if parsed.msg_type == ConsoleMsgType::Info && (
                 parsed.thread_name.starts_with("Async Chat Thread") ||
                 parsed.msg.starts_with("<") && parsed.thread_name == "Server thread"
             ) {
-                let (player, player_msg) = {
-                    let (player, remain) = parsed.msg.split_at(if let Some(idx) = parsed.msg.find('>') {
+                let (name, msg) = {
+                    let (name, remain) = parsed.msg.split_at(if let Some(idx) = parsed.msg.find('>') {
                         idx
                     } else {
                         // This is not a player message, return a generic one
@@ -72,13 +81,13 @@ impl ConsoleMsgSpecific {
                     });
 
                     // Trim "<" from the player's name and "> " from the msg
-                    (player[1..].to_string(), remain[2..].to_string())
+                    (name[1..].to_string(), remain[2..].to_string())
                 };
 
                 ConsoleMsgSpecific::PlayerMsg {
                     generic_msg: parsed,
-                    player,
-                    player_msg
+                    name,
+                    msg
                 }
         } else if parsed.msg == "You need to agree to the EULA in order to run the server. Go to \
                                 eula.txt for more info." &&
@@ -86,8 +95,8 @@ impl ConsoleMsgSpecific {
                 ConsoleMsgSpecific::MustAcceptEula(parsed)
         } else if parsed.msg.contains("logged in with entity id") &&
             parsed.msg_type == ConsoleMsgType::Info {
-                let (player, remain) = parsed.msg.split_at(parsed.msg.find('[').unwrap());
-                let player = player.to_string();
+                let (name, remain) = parsed.msg.split_at(parsed.msg.find('[').unwrap());
+                let name = name.to_string();
 
                 let (ip, mut remain) = remain.split_at(remain.find(']').unwrap());
                 let ip = ip[2..].to_string();
@@ -115,7 +124,7 @@ impl ConsoleMsgSpecific {
 
                 ConsoleMsgSpecific::PlayerLogin {
                     generic_msg: parsed,
-                    player,
+                    name,
                     ip,
                     entity_id,
                     coords: (x_coord, y_coord, z_coord)
@@ -138,6 +147,23 @@ impl ConsoleMsgSpecific {
             ConsoleMsgSpecific::SpawnPrepareFinish {
                 generic_msg: parsed,
                 time_elapsed_ms
+            }
+        } else if parsed.msg.contains("lost connection: ") {
+            let (name, remain) = parsed.msg.split_at(parsed.msg.find(' ').unwrap());
+            let name = name.into();
+            let reason = remain[remain.find(':').unwrap() + 2..].into();
+
+            ConsoleMsgSpecific::PlayerLostConnection {
+                generic_msg: parsed,
+                name,
+                reason
+            }
+        } else if parsed.msg.contains("left the game") {
+            let name = parsed.msg.split_at(parsed.msg.find(' ').unwrap()).0.into();
+
+            ConsoleMsgSpecific::PlayerLogout {
+                generic_msg: parsed,
+                name
             }
         } else {
             // It wasn't anything specific we're looking for
@@ -276,7 +302,7 @@ mod test {
         let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
-            ConsoleMsgSpecific::PlayerMsg { generic_msg, player, player_msg } => {
+            ConsoleMsgSpecific::PlayerMsg { generic_msg, name, msg } => {
                 assert!(generic_msg.timestamp.hour() == 23);
                 assert!(generic_msg.timestamp.minute() == 12);
                 assert!(generic_msg.timestamp.second() == 39);
@@ -284,8 +310,8 @@ mod test {
                 assert!(generic_msg.msg_type == ConsoleMsgType::Info);
                 assert!(generic_msg.msg == "<Cldfire> hi!");
 
-                assert!(player == "Cldfire");
-                assert!(player_msg == "hi!");
+                assert!(name == "Cldfire");
+                assert!(msg == "hi!");
             }
             _ => panic!("wrong variant")
         }
@@ -297,7 +323,7 @@ mod test {
         let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
-            ConsoleMsgSpecific::PlayerMsg { generic_msg, player, player_msg } => {
+            ConsoleMsgSpecific::PlayerMsg { generic_msg, name, msg } => {
                 assert!(generic_msg.timestamp.hour() == 23);
                 assert!(generic_msg.timestamp.minute() == 12);
                 assert!(generic_msg.timestamp.second() == 39);
@@ -305,8 +331,8 @@ mod test {
                 assert!(generic_msg.msg_type == ConsoleMsgType::Info);
                 assert!(generic_msg.msg == "<Cldfire> hi!");
 
-                assert!(player == "Cldfire");
-                assert!(player_msg == "hi!");
+                assert!(name == "Cldfire");
+                assert!(msg == "hi!");
             }
             _ => panic!("wrong variant")
         }
@@ -319,7 +345,7 @@ mod test {
         let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
-            ConsoleMsgSpecific::PlayerLogin { generic_msg, player, ip, entity_id, coords } => {
+            ConsoleMsgSpecific::PlayerLogin { generic_msg, name, ip, entity_id, coords } => {
                 assert!(generic_msg.timestamp.hour() == 23);
                 assert!(generic_msg.timestamp.minute() == 11);
                 assert!(generic_msg.timestamp.second() == 12);
@@ -328,7 +354,7 @@ mod test {
                 assert!(generic_msg.msg == "Cldfire[/127.0.0.1:56538] logged in with entity \
                     id 121 at (-2.5, 63.0, 256.5)");
 
-                assert!(player == "Cldfire");
+                assert!(name == "Cldfire");
                 assert!(ip == "127.0.0.1:56538");
                 assert!(entity_id == 121);
                 assert!(coords == (-2.5, 63.0, 256.5));
@@ -344,7 +370,7 @@ mod test {
         let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
 
         match msg_struct {
-            ConsoleMsgSpecific::PlayerAuth { generic_msg, player, uuid } => {
+            ConsoleMsgSpecific::PlayerAuth { generic_msg, name, uuid } => {
                 assert!(generic_msg.timestamp.hour() == 23);
                 assert!(generic_msg.timestamp.minute() == 11);
                 assert!(generic_msg.timestamp.second() == 12);
@@ -353,7 +379,7 @@ mod test {
                 assert!(generic_msg.msg == "UUID of player Cldfire is \
                     361e5fb3-dbce-4f91-86b2-43423a4888d5");
 
-                assert!(player == "Cldfire");
+                assert!(name == "Cldfire");
                 assert!(uuid == "361e5fb3-dbce-4f91-86b2-43423a4888d5");
             }
             _ => panic!("wrong variant")
@@ -389,6 +415,37 @@ mod test {
             ConsoleMsgSpecific::SpawnPrepareFinish { generic_msg, time_elapsed_ms } => {
                 assert_eq!(generic_msg.msg, "Time elapsed: 3292 ms");
                 assert_eq!(time_elapsed_ms, 3292);
+            }
+            _ => panic!("wrong variant")
+        }
+    }
+
+    #[test]
+    fn parse_player_lost_connection() {
+        let msg = "[19:10:21] [Server thread/INFO]: Cldfire lost connection: Disconnected";
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
+
+        match msg_struct {
+            ConsoleMsgSpecific::PlayerLostConnection { generic_msg, name, reason } => {
+                assert_eq!(generic_msg.msg, "Cldfire lost connection: Disconnected");
+
+                assert_eq!(name, "Cldfire");
+                assert_eq!(reason, "Disconnected");
+            }
+            _ => panic!("wrong variant")
+        }
+    }
+
+    #[test]
+    fn parse_player_left_game() {
+        let msg = "[19:10:21] [Server thread/INFO]: Cldfire left the game";
+        let msg_struct = ConsoleMsgSpecific::try_parse_from(msg).unwrap();
+
+        match msg_struct {
+            ConsoleMsgSpecific::PlayerLogout { generic_msg, name } => {
+                assert_eq!(generic_msg.msg, "Cldfire left the game");
+
+                assert_eq!(name, "Cldfire");
             }
             _ => panic!("wrong variant")
         }

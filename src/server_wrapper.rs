@@ -105,7 +105,9 @@ pub async fn run_server(
                 }
                 ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
                 ConsoleMsgSpecific::PlayerLogin { generic_msg, .. } => println!("{}", generic_msg),
-                ConsoleMsgSpecific::PlayerMsg { generic_msg, player, player_msg } => {
+                ConsoleMsgSpecific::PlayerLostConnection { generic_msg, .. } => println!("{}", generic_msg),
+                ConsoleMsgSpecific::PlayerLogout { generic_msg, .. } => println!("{}", generic_msg),
+                ConsoleMsgSpecific::PlayerMsg { generic_msg, name, msg } => {
                     println!("{}", generic_msg);
 
                     if let Some(discord_client) = discord_client.clone() {
@@ -114,7 +116,7 @@ pub async fn run_server(
                             discord_client
                                 // TODO: don't hardcode
                                 .create_message(ChannelId(discord_channel_id))
-                                .content("**".to_string() + &player + "**: " + &player_msg)
+                                .content("**".to_string() + &name + "**: " + &msg)
                                 .await
                         });
                     }
