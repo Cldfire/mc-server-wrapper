@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::env;
 
 use indicatif::{ProgressBar, ProgressStyle};
+use minecraft_chat::{MessageBuilder, Payload};
 
 use twilight::{
     gateway::Cluster,
@@ -142,15 +143,24 @@ pub async fn run_server(
             tokio::select! {
                 Some(cmd) = servercmd_receiver.next() => {
                     match cmd {
-                        ServerCommand::SendChatMsg(msg) => {
-                            let _ = stdin.write_all(("tellraw @a [\"".to_string() + "[Discord] " + &msg + "\"]\n").as_bytes()).await;
+                        ServerCommand::SendDiscordMsg{ username, msg } => {
+                            let tellraw_msg = MessageBuilder::builder(Payload::text("[Discord] "))
+                                .bold(true)
+                                .then(Payload::text(&("<".to_string() + &username + "> " + &msg)))
+                                .bold(false)
+                                .build();
+
+                            let _ = stdin.write_all(
+                                ("tellraw @a ".to_string() + &tellraw_msg.to_json().unwrap() + "\n")
+                                .as_bytes()
+                            ).await;
     
                             // TODO: This will not add the message to the server logs
                             println!("{}", ConsoleMsg {
                                 timestamp: chrono::offset::Local::now().naive_local().time(),
                                 thread_name: "".into(),
                                 msg_type: ConsoleMsgType::Info,
-                                msg: "[Discord] ".to_string() + &msg
+                                msg: "[Discord] <".to_string() + &username + "> " + &msg
                             });
                         },
                         ServerCommand::ServerClosed => break

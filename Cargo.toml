@@ -12,3 +12,4 @@ tokio = { version = "0.2", features = ["full"] }
 dotenv = "0.15"
 futures = "0.3"
 twilight = { git = "https://github.com/twilight-rs/twilight.git" }
+minecraft-chat = "0.1"
