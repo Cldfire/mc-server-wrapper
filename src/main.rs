@@ -99,6 +99,13 @@ fn main() -> Result<(), Error> {
             .unwrap_or_else(||
                 env::var("DISCORD_CHANNEL_ID").unwrap_or("".into()).parse().unwrap_or(0)
             ));
+        if opt.discord_channel_id.unwrap() == 0 {
+            println!("Discord bridge was enabled but a channel ID to bridge to \
+                    was not provided. Either set the environment variable \
+                    `DISCORD_CHANNEL_ID` or provide it via the command line \
+                    with the `--discord-channel-id` option");
+            return ();
+        }
 
         let discord_token = opt.discord_token.take()
             .unwrap_or_else(||
@@ -185,13 +192,6 @@ fn main() -> Result<(), Error> {
                         println!("Failed to agree to EULA: {:?}", e);
                         break;
                     }
-                },
-                Err(ServerError::DiscordChannelIdNotSet) => {
-                    println!("You enabled the Discord bridge but did not set the \
-                            `DISCORD_CHANNEL_ID` environment variable; please \
-                            set it to the ID of the channel you want messages \
-                            bridged to");
-                    break;
                 }
             }
         }

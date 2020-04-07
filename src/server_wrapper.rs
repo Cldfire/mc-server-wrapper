@@ -6,10 +6,9 @@ use futures::channel::mpsc::{Sender, Receiver};
 
 use std::process::{Stdio, ExitStatus};
 use std::sync::Arc;
-use std::env;
 
 use indicatif::{ProgressBar, ProgressStyle};
-use minecraft_chat::{MessageBuilder, Payload};
+use minecraft_chat::{MessageBuilder, Payload, Color};
 
 use twilight::{
     gateway::Cluster,
@@ -35,15 +34,10 @@ pub async fn run_server(
 ) -> Result<(ExitStatus, Vec<String>), ServerError> {
     let folder = opt.server_path.as_path().parent().unwrap();
     let file = opt.server_path.file_name().unwrap();
-    let discord_channel_id = if opt.bridge_to_discord {
-        env::var("DISCORD_CHANNEL_ID")
-            .map_err(|_| ServerError::DiscordChannelIdNotSet)?
-            .parse()
-            .unwrap()
-    } else {
-        0
-    };
+    let discord_channel_id = opt.discord_channel_id.unwrap();
 
+    // TODO: support running from inside folder containing server jar
+    // (don't run cd)
     let mut process = Command::new("sh")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -104,10 +98,21 @@ pub async fn run_server(
                     println!("{}", generic_msg);
                     ret = Err(ServerError::EulaNotAccepted);
                 }
-                ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
-                ConsoleMsgSpecific::PlayerLogin { generic_msg, .. } => println!("{}", generic_msg),
                 ConsoleMsgSpecific::PlayerLostConnection { generic_msg, .. } => println!("{}", generic_msg),
                 ConsoleMsgSpecific::PlayerLogout { generic_msg, .. } => println!("{}", generic_msg),
+                ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
+                ConsoleMsgSpecific::PlayerLogin { generic_msg, name, .. } => {
+                    println!("{}", generic_msg);
+
+                    if let Some(discord_client) = discord_client.clone() {
+                        tokio::spawn(async move {
+                            discord_client
+                                .create_message(ChannelId(discord_channel_id))
+                                .content("_**".to_string() + &name + "** joined the game_")
+                                .await
+                        });
+                    }
+                },
                 ConsoleMsgSpecific::PlayerMsg { generic_msg, name, msg } => {
                     println!("{}", generic_msg);
 
@@ -115,9 +120,8 @@ pub async fn run_server(
                         // TODO: error handling
                         tokio::spawn(async move {
                             discord_client
-                                // TODO: don't hardcode
                                 .create_message(ChannelId(discord_channel_id))
-                                .content("**".to_string() + &name + "**: " + &msg)
+                                .content("**".to_string() + &name + "**  " + &msg)
                                 .await
                         });
                     }
@@ -144,10 +148,12 @@ pub async fn run_server(
                 Some(cmd) = servercmd_receiver.next() => {
                     match cmd {
                         ServerCommand::SendDiscordMsg{ username, msg } => {
-                            let tellraw_msg = MessageBuilder::builder(Payload::text("[Discord] "))
+                            let tellraw_msg = MessageBuilder::builder(Payload::text("[D] "))
                                 .bold(true)
+                                .color(Color::LightPurple)
                                 .then(Payload::text(&("<".to_string() + &username + "> " + &msg)))
                                 .bold(false)
+                                .color(Color::White)
                                 .build();
 
                             let _ = stdin.write_all(
@@ -160,7 +166,7 @@ pub async fn run_server(
                                 timestamp: chrono::offset::Local::now().naive_local().time(),
                                 thread_name: "".into(),
                                 msg_type: ConsoleMsgType::Info,
-                                msg: "[Discord] <".to_string() + &username + "> " + &msg
+                                msg: "[D] <".to_string() + &username + "> " + &msg
                             });
                         },
                         ServerCommand::ServerClosed => break
