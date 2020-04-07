@@ -30,19 +30,26 @@ mod server_wrapper;
 #[derive(StructOpt, Debug)]
 #[structopt(name = "mc-wrapper")]
 pub struct Opt {
-    /// The path to the server jar to execute
+    /// Path to the server jar to execute
     #[structopt(parse(from_os_str))]
     server_path: PathBuf,
 
     /// Discord bot token (for Discord chat bridge)
+    // Note that we cannot set this flag using structopt's env feature because
+    // it prints the value if it's set when you view help output, and we
+    // of course don't want that for private tokens
     #[structopt(long)]
     discord_token: Option<String>,
 
+    /// Discord channel ID (for Discord chat bridge)
+    #[structopt(long)]
+    discord_channel_id: Option<u64>,
+
     /// Bridge server chat to discord
-    #[structopt(short, long, default_value_if("discord_token", None, "true"))]
+    #[structopt(short, long)]
     bridge_to_discord: bool,
 
-    /// The amount of memory in megabytes to allocate for the server
+    /// Amount of memory in megabytes to allocate for the server
     #[structopt(short = "m", long = "memory", default_value = "1024")]
     memory: u16
 }
@@ -85,6 +92,11 @@ fn main() -> Result<(), Error> {
     rt.block_on(async {
         dotenv().ok();
         let mut opt = Opt::from_args();
+        opt.discord_channel_id = Some(opt.discord_channel_id.take()
+            .unwrap_or_else(||
+                env::var("DISCORD_CHANNEL_ID").unwrap_or("".into()).parse().unwrap_or(0)
+            ));
+
         let discord_token = opt.discord_token.take()
             .unwrap_or_else(||
                 env::var("DISCORD_TOKEN").unwrap_or_else(|_| String::new())
