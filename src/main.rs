@@ -22,6 +22,8 @@ use crate::server_wrapper::run_server;
 use crate::error::*;
 use crate::command::ServerCommand;
 
+#[cfg(test)]
+mod test;
 mod command;
 mod error;
 mod parse;
