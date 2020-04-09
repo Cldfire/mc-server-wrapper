@@ -12,12 +12,12 @@ fn warn_msg() {
 
     match msg_struct {
         ConsoleMsgSpecific::GenericMsg(generic_msg) => {
-            assert!(generic_msg.timestamp.hour() == 23);
-            assert!(generic_msg.timestamp.minute() == 10);
-            assert!(generic_msg.timestamp.second() == 30);
-            assert!(generic_msg.thread_name == "main");
-            assert!(generic_msg.msg_type == ConsoleMsgType::Warn);
-            assert!(generic_msg.msg == "Ambiguity between arguments [teleport, targets, location] \
+            assert_eq!(generic_msg.timestamp.hour(), 23);
+            assert_eq!(generic_msg.timestamp.minute(), 10);
+            assert_eq!(generic_msg.timestamp.second(), 30);
+            assert_eq!(generic_msg.thread_name, "main");
+            assert_eq!(generic_msg.msg_type, ConsoleMsgType::Warn);
+            assert_eq!(generic_msg.msg, "Ambiguity between arguments [teleport, targets, location] \
                 and [teleport, targets, destination] with inputs: [0.1 -0.5 .9, 0 0 0]");
         }
         _ => panic!("wrong variant")
@@ -31,12 +31,12 @@ fn info_msg() {
 
     match msg_struct {
         ConsoleMsgSpecific::GenericMsg(generic_msg) => {
-            assert!(generic_msg.timestamp.hour() == 23);
-            assert!(generic_msg.timestamp.minute() == 10);
-            assert!(generic_msg.timestamp.second() == 31);
-            assert!(generic_msg.thread_name == "Server thread");
-            assert!(generic_msg.msg_type == ConsoleMsgType::Info);
-            assert!(generic_msg.msg == "Starting Minecraft server on *:25565");
+            assert_eq!(generic_msg.timestamp.hour(), 23);
+            assert_eq!(generic_msg.timestamp.minute(), 10);
+            assert_eq!(generic_msg.timestamp.second(), 31);
+            assert_eq!(generic_msg.thread_name, "Server thread");
+            assert_eq!(generic_msg.msg_type, ConsoleMsgType::Info);
+            assert_eq!(generic_msg.msg, "Starting Minecraft server on *:25565");
         }
         _ => panic!("wrong variant")
     }
@@ -50,12 +50,12 @@ fn must_accept_eula() {
 
     match msg_struct {
         ConsoleMsgSpecific::MustAcceptEula(generic_msg) => {
-            assert!(generic_msg.timestamp.hour() == 00);
-            assert!(generic_msg.timestamp.minute() == 03);
-            assert!(generic_msg.timestamp.second() == 56);
-            assert!(generic_msg.thread_name == "Server thread");
-            assert!(generic_msg.msg_type == ConsoleMsgType::Info);
-            assert!(generic_msg.msg == "You need to agree to the EULA in order to run the \
+            assert_eq!(generic_msg.timestamp.hour(), 00);
+            assert_eq!(generic_msg.timestamp.minute(), 03);
+            assert_eq!(generic_msg.timestamp.second(), 56);
+            assert_eq!(generic_msg.thread_name, "Server thread");
+            assert_eq!(generic_msg.msg_type, ConsoleMsgType::Info);
+            assert_eq!(generic_msg.msg, "You need to agree to the EULA in order to run the \
                 server. Go to eula.txt for more info.");
         }
         _ => panic!("wrong variant")
@@ -69,15 +69,15 @@ fn player_msg() {
 
     match msg_struct {
         ConsoleMsgSpecific::PlayerMsg { generic_msg, name, msg } => {
-            assert!(generic_msg.timestamp.hour() == 23);
-            assert!(generic_msg.timestamp.minute() == 12);
-            assert!(generic_msg.timestamp.second() == 39);
-            assert!(generic_msg.thread_name == "Server thread");
-            assert!(generic_msg.msg_type == ConsoleMsgType::Info);
-            assert!(generic_msg.msg == "<Cldfire> hi!");
+            assert_eq!(generic_msg.timestamp.hour(), 23);
+            assert_eq!(generic_msg.timestamp.minute(), 12);
+            assert_eq!(generic_msg.timestamp.second(), 39);
+            assert_eq!(generic_msg.thread_name, "Server thread");
+            assert_eq!(generic_msg.msg_type, ConsoleMsgType::Info);
+            assert_eq!(generic_msg.msg, "<Cldfire> hi!");
 
-            assert!(name == "Cldfire");
-            assert!(msg == "hi!");
+            assert_eq!(name, "Cldfire");
+            assert_eq!(msg, "hi!");
         }
         _ => panic!("wrong variant")
     }
@@ -91,18 +91,18 @@ fn player_login() {
 
     match msg_struct {
         ConsoleMsgSpecific::PlayerLogin { generic_msg, name, ip, entity_id, coords, world } => {
-            assert!(generic_msg.timestamp.hour() == 23);
-            assert!(generic_msg.timestamp.minute() == 11);
-            assert!(generic_msg.timestamp.second() == 12);
-            assert!(generic_msg.thread_name == "Server thread");
-            assert!(generic_msg.msg_type == ConsoleMsgType::Info);
-            assert!(generic_msg.msg == "Cldfire[/127.0.0.1:56538] logged in with entity \
+            assert_eq!(generic_msg.timestamp.hour(), 23);
+            assert_eq!(generic_msg.timestamp.minute(), 11);
+            assert_eq!(generic_msg.timestamp.second(), 12);
+            assert_eq!(generic_msg.thread_name, "Server thread");
+            assert_eq!(generic_msg.msg_type, ConsoleMsgType::Info);
+            assert_eq!(generic_msg.msg, "Cldfire[/127.0.0.1:56538] logged in with entity \
                 id 121 at (-2.5, 63.0, 256.5)");
 
-            assert!(name == "Cldfire");
-            assert!(ip == "127.0.0.1:56538");
-            assert!(entity_id == 121);
-            assert!(coords == (-2.5, 63.0, 256.5));
+            assert_eq!(name, "Cldfire");
+            assert_eq!(ip, "127.0.0.1:56538");
+            assert_eq!(entity_id, 121);
+            assert_eq!(coords, (-2.5, 63.0, 256.5));
             assert!(world.is_none());
         }
         _ => panic!("wrong variant")
@@ -117,16 +117,16 @@ fn player_auth() {
 
     match msg_struct {
         ConsoleMsgSpecific::PlayerAuth { generic_msg, name, uuid } => {
-            assert!(generic_msg.timestamp.hour() == 23);
-            assert!(generic_msg.timestamp.minute() == 11);
-            assert!(generic_msg.timestamp.second() == 12);
-            assert!(generic_msg.thread_name == "User Authenticator #1");
-            assert!(generic_msg.msg_type == ConsoleMsgType::Info);
-            assert!(generic_msg.msg == "UUID of player Cldfire is \
+            assert_eq!(generic_msg.timestamp.hour(), 23);
+            assert_eq!(generic_msg.timestamp.minute(), 11);
+            assert_eq!(generic_msg.timestamp.second(), 12);
+            assert_eq!(generic_msg.thread_name, "User Authenticator #1");
+            assert_eq!(generic_msg.msg_type, ConsoleMsgType::Info);
+            assert_eq!(generic_msg.msg, "UUID of player Cldfire is \
                 361e5fb3-dbce-4f91-86b2-43423a4888d5");
 
-            assert!(name == "Cldfire");
-            assert!(uuid == "361e5fb3-dbce-4f91-86b2-43423a4888d5");
+            assert_eq!(name, "Cldfire");
+            assert_eq!(uuid, "361e5fb3-dbce-4f91-86b2-43423a4888d5");
         }
         _ => panic!("wrong variant")
     }
@@ -139,14 +139,14 @@ fn spawn_prepare_progress() {
 
     match msg_struct {
         ConsoleMsgSpecific::SpawnPrepareProgress { generic_msg, progress } => {
-            assert!(generic_msg.timestamp.hour() == 23);
-            assert!(generic_msg.timestamp.minute() == 10);
-            assert!(generic_msg.timestamp.second() == 35);
-            assert!(generic_msg.thread_name == "Server thread");
-            assert!(generic_msg.msg_type == ConsoleMsgType::Info);
-            assert!(generic_msg.msg == "Preparing spawn area: 44%");
+            assert_eq!(generic_msg.timestamp.hour(), 23);
+            assert_eq!(generic_msg.timestamp.minute(), 10);
+            assert_eq!(generic_msg.timestamp.second(), 35);
+            assert_eq!(generic_msg.thread_name, "Server thread");
+            assert_eq!(generic_msg.msg_type, ConsoleMsgType::Info);
+            assert_eq!(generic_msg.msg, "Preparing spawn area: 44%");
 
-            assert!(progress == 44);
+            assert_eq!(progress, 44);
         }
         _ => panic!("wrong variant")
     }

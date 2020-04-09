@@ -19,14 +19,14 @@ fn player_login() {
 
     match msg_struct {
         ConsoleMsgSpecific::PlayerLogin { generic_msg, name, ip, entity_id, coords, world } => {
-            assert!(generic_msg.msg == "Cldfire[/127.0.0.1:56538] logged in with entity id 97 \
+            assert_eq!(generic_msg.msg, "Cldfire[/127.0.0.1:56538] logged in with entity id 97 \
                 at ([world]8185.897723692287, 65.0, -330.1145592972985)");
 
-            assert!(name == "Cldfire");
-            assert!(ip == "127.0.0.1:56538");
-            assert!(entity_id == 97);
-            assert!(coords == (8185.897723692287, 65.0, -330.1145592972985));
-            assert!(world.unwrap() == "world");
+            assert_eq!(name, "Cldfire");
+            assert_eq!(ip, "127.0.0.1:56538");
+            assert_eq!(entity_id, 97);
+            assert_eq!(coords, (8185.897723692287, 65.0, -330.1145592972985));
+            assert_eq!(world.unwrap(), "world");
         }
         _ => panic!("wrong variant")
     }
@@ -39,15 +39,15 @@ fn player_msg() {
 
     match msg_struct {
         ConsoleMsgSpecific::PlayerMsg { generic_msg, name, msg } => {
-            assert!(generic_msg.timestamp.hour() == 23);
-            assert!(generic_msg.timestamp.minute() == 12);
-            assert!(generic_msg.timestamp.second() == 39);
-            assert!(generic_msg.thread_name == "Async Chat Thread - #8");
-            assert!(generic_msg.msg_type == ConsoleMsgType::Info);
-            assert!(generic_msg.msg == "<Cldfire> hi!");
+            assert_eq!(generic_msg.timestamp.hour(), 23);
+            assert_eq!(generic_msg.timestamp.minute(), 12);
+            assert_eq!(generic_msg.timestamp.second(), 39);
+            assert_eq!(generic_msg.thread_name, "Async Chat Thread - #8");
+            assert_eq!(generic_msg.msg_type, ConsoleMsgType::Info);
+            assert_eq!(generic_msg.msg, "<Cldfire> hi!");
 
-            assert!(name == "Cldfire");
-            assert!(msg == "hi!");
+            assert_eq!(name, "Cldfire");
+            assert_eq!(msg, "hi!");
         }
         _ => panic!("wrong variant")
     }
