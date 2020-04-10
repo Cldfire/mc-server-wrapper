@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
-use futures::{SinkExt, StreamExt};
-use futures::channel::mpsc;
+use tokio::stream::StreamExt;
+use tokio::sync::mpsc;
 
 use twilight::{
     gateway::{shard::Event, Cluster, ClusterConfig},
@@ -101,23 +101,31 @@ fn main() -> Result<(), Error> {
             .unwrap_or_else(||
                 env::var("DISCORD_CHANNEL_ID").unwrap_or("".into()).parse().unwrap_or(0)
             ));
-        if opt.discord_channel_id.unwrap() == 0 {
-            println!("Discord bridge was enabled but a channel ID to bridge to \
-                    was not provided. Either set the environment variable \
-                    `DISCORD_CHANNEL_ID` or provide it via the command line \
-                    with the `--discord-channel-id` option");
-            return ();
-        }
-
         let discord_token = opt.discord_token.take()
             .unwrap_or_else(||
                 env::var("DISCORD_TOKEN").unwrap_or_else(|_| String::new())
             );
+
         let discord_client;
         let discord_cluster;
-        
         // Set up discord bridge if enabled
         if opt.bridge_to_discord {
+            if opt.discord_channel_id.unwrap() == 0 {
+                println!("Discord bridge was enabled but a channel ID to bridge to \
+                        was not provided. Either set the environment variable \
+                        `DISCORD_CHANNEL_ID` or provide it via the command line \
+                        with the `--discord-channel-id` option");
+                return ();
+            }
+
+            if opt.discord_token.as_ref().unwrap() == "" {
+                println!("Discord bridge was enabled but an API token for a Discord \
+                        bot was not provided. Either set the environment variable \
+                        `DISCORD_TOKEN` or provide it via the command line with the \
+                        `--discord-token` option");
+                return ();
+            }
+
             discord_client = Some(Arc::new(DiscordClient::new(&discord_token)));
 
             let cluster_config = ClusterConfig::builder(&discord_token).build();

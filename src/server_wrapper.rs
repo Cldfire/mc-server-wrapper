@@ -1,8 +1,8 @@
 use tokio::prelude::*;
 use tokio::process::Command;
 use tokio::io::BufReader;
-use futures::{StreamExt, SinkExt};
-use futures::channel::mpsc::{Sender, Receiver};
+use tokio::sync::mpsc::{Sender, Receiver};
+use tokio::stream::StreamExt;
 
 use std::process::{Stdio, ExitStatus};
 use std::sync::Arc;
