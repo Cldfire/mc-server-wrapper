@@ -1,26 +1,29 @@
 use std::path::PathBuf;
 use std::io;
 use std::env;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 use tokio::stream::StreamExt;
-use tokio::sync::mpsc;
+use tokio::io::BufReader;
 
 use twilight::{
     gateway::{shard::Event, Cluster, ClusterConfig},
     http::Client as DiscordClient,
-    model::channel::message::MessageType
+    model::channel::message::MessageType,
+    model::id::ChannelId
 };
+
+use minecraft_chat::{MessageBuilder, Payload, Color};
 
 use dotenv::dotenv;
 use structopt::StructOpt;
-use crate::server_wrapper::run_server;
+use crate::server_wrapper::*;
 use crate::error::*;
 use crate::command::ServerCommand;
+use crate::parse::{ConsoleMsgSpecific, ConsoleMsg, ConsoleMsgType};
 
 #[cfg(test)]
 mod test;
@@ -64,7 +67,7 @@ async fn agree_to_eula(opt: &Opt) -> io::Result<()> {
 
 async fn handle_discord_event(
     event: (u64, Event),
-    _discord_client: Arc<DiscordClient>,
+    _discord_client: DiscordClient,
 ) -> Result<Option<ServerCommand>, Error> {
     match event {
         (_, Event::Ready(_)) => {
@@ -77,11 +80,25 @@ async fn handle_discord_event(
         },
         (_, Event::MessageCreate(msg)) => {
             // TODO: maybe some bot chatter should be allowed through?
+            // TODO: error handling
             if msg.kind == MessageType::Regular && !msg.author.bot {
-                Ok(Some(ServerCommand::SendDiscordMsg {
-                    username: msg.author.name.clone(),
-                    msg: msg.content.clone()
-                }))
+                let tellraw_msg = MessageBuilder::builder(Payload::text("[D] "))
+                    .bold(true)
+                    .color(Color::LightPurple)
+                    .then(Payload::text(&("<".to_string() + &msg.author.name + "> " + &msg.content)))
+                    .bold(false)
+                    .color(Color::White)
+                    .build();
+
+                // TODO: This will not add the message to the server logs
+                println!("{}", ConsoleMsg {
+                    timestamp: chrono::offset::Local::now().naive_local().time(),
+                    thread_name: "".into(),
+                    msg_type: ConsoleMsgType::Info,
+                    msg: "[D] <".to_string() + &msg.author.name + "> " + &msg.content
+                });
+
+                Ok(Some(ServerCommand::TellRaw(tellraw_msg.to_json().unwrap())))
             } else {
                 Ok(None)
             }
@@ -97,10 +114,17 @@ fn main() -> Result<(), Error> {
     rt.block_on(async {
         dotenv().ok();
         let mut opt = Opt::from_args();
-        opt.discord_channel_id = Some(opt.discord_channel_id.take()
+
+        let mc_config = McServerConfig {
+            server_path: opt.server_path.clone(),
+            memory: opt.memory
+        };
+        let (_, mut cmd_sender, mut event_receiver) = McServer::new(mc_config).await;
+
+        let discord_channel_id = opt.discord_channel_id.take()
             .unwrap_or_else(||
                 env::var("DISCORD_CHANNEL_ID").unwrap_or("".into()).parse().unwrap_or(0)
-            ));
+            );
         let discord_token = opt.discord_token.take()
             .unwrap_or_else(||
                 env::var("DISCORD_TOKEN").unwrap_or_else(|_| String::new())
@@ -110,7 +134,7 @@ fn main() -> Result<(), Error> {
         let discord_cluster;
         // Set up discord bridge if enabled
         if opt.bridge_to_discord {
-            if opt.discord_channel_id.unwrap() == 0 {
+            if discord_channel_id == 0 {
                 println!("Discord bridge was enabled but a channel ID to bridge to \
                         was not provided. Either set the environment variable \
                         `DISCORD_CHANNEL_ID` or provide it via the command line \
@@ -118,7 +142,7 @@ fn main() -> Result<(), Error> {
                 return ();
             }
 
-            if opt.discord_token.as_ref().unwrap() == "" {
+            if discord_token == "" {
                 println!("Discord bridge was enabled but an API token for a Discord \
                         bot was not provided. Either set the environment variable \
                         `DISCORD_TOKEN` or provide it via the command line with the \
@@ -126,84 +150,164 @@ fn main() -> Result<(), Error> {
                 return ();
             }
 
-            discord_client = Some(Arc::new(DiscordClient::new(&discord_token)));
-
+            let discord_client_temp = DiscordClient::new(&discord_token);
             let cluster_config = ClusterConfig::builder(&discord_token).build();
-            discord_cluster = Some(Arc::new(Cluster::new(cluster_config)));
-            discord_cluster.as_ref().unwrap().up().await
-                .expect("Could not connect to Discord");
+            let discord_cluster_temp = Cluster::new(cluster_config);
+            discord_cluster_temp.up().await.expect("Could not connect to Discord");
+            let cmd_sender_clone = cmd_sender.clone();
+
+            let discord_client_clone = discord_client_temp.clone();
+            let discord_cluster_clone = discord_cluster_temp.clone();
+            tokio::spawn(async move {
+                let discord_client = discord_client_clone;
+                let discord_cluster = discord_cluster_clone;
+                let cmd_sender = cmd_sender_clone;
+
+                // For all received Discord events, map the event to a `ServerCommand`
+                // (if necessary) and send it to the Minecraft server
+                let mut events = discord_cluster.events().await;
+                while let Some(e) = events.next().await {
+                    let client_clone = discord_client.clone();
+                    let mut cmd_sender_clone = cmd_sender.clone();
+
+                    tokio::spawn(async move {
+                        match handle_discord_event(e, client_clone).await {
+                            Ok(Some(cmd)) => {
+                                let _ = cmd_sender_clone.send(cmd).await;
+                            },
+                            // TODO: error handling
+                            _ => {}
+                        }
+                    });
+                }
+            });
+
+            discord_client = Some(discord_client_temp);
+            discord_cluster = Some(discord_cluster_temp);
         } else {
             discord_client = None;
             discord_cluster = None;
         }
 
-        let mut prev_stderr_output = vec![];
-        let mut last_start_time;
-        loop {
-            let (servercmd_sender, servercmd_receiver) = mpsc::channel::<ServerCommand>(32);
-            
-            if opt.bridge_to_discord {
-                let cluster_clone = discord_cluster.as_ref().unwrap().clone();
-                let client_clone = discord_client.as_ref().unwrap().clone();
-                let servercmd_sender_clone = servercmd_sender.clone();
-    
-                tokio::spawn(async move {
-                    // For all received Discord events, map the event to a `ServerCommand`
-                    // (if necessary) and forward it to the `server_cmd` sender
-                    let mut events = cluster_clone.events().await;
-                    while let Some(e) = events.next().await {
-                        let client_clone = client_clone.clone();
-                        let mut servercmd_sender_clone = servercmd_sender_clone.clone();
-    
-                        tokio::spawn(async move {
-                            match handle_discord_event(e, client_clone).await {
-                                Ok(Some(cmd)) => {
-                                    let _ = servercmd_sender_clone.send(cmd).await;
-                                },
-                                // TODO: error handling
-                                _ => {}
-                            }
-                        });
-                    }
-                });
-            }
+        cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+        let mut last_start_time = Instant::now();
+        let mut our_stdin = BufReader::new(tokio::io::stdin()).lines();
 
-            last_start_time = Instant::now();
-            match run_server(
-                &opt,
-                discord_client.clone(),
-                discord_cluster.clone(),
-                servercmd_sender.clone(),
-                servercmd_receiver
-            ).await {
-                Ok((status, stderr_output)) => if status.success() {
-                    break;
-                } else {
-                    // There are circumstances where the status will be failure
-                    // and attempting to restart the server will always fail. We
-                    // attempt to catch these cases by saving the stderr output
-                    // from the last time we had to restart after failure and
-                    // not restarting if the output is the same within a time
-                    // window
-                    // TODO: this is naive but will have to do for now
-                    if stderr_output == prev_stderr_output &&
-                        last_start_time.elapsed().as_secs() < 60 {
-                        println!("Fatal error believed to have been encountered, not \
-                            restarting server");
-                        break;
-                    } else {
-                        prev_stderr_output = stderr_output;
-                        println!("Restarting server...")
-                        // TODO: tell discord that the mc server crashed
+        loop {
+            tokio::select! {
+                Some(e) = event_receiver.next() => {
+                    match e {
+                        ServerEvent::ConsoleEvent(msg) => {
+                            // TODO: need to improve design of these events so we don't
+                            // have to have an arm for every variant to get at the
+                            // generic_msg
+                            match msg {
+                                ConsoleMsgSpecific::GenericMsg(generic_msg) => println!("{}", generic_msg),
+                                ConsoleMsgSpecific::MustAcceptEula(generic_msg) => {
+                                    println!("{}", generic_msg);
+                                },
+                                ConsoleMsgSpecific::PlayerLostConnection { generic_msg, .. } => println!("{}", generic_msg),
+                                ConsoleMsgSpecific::PlayerLogout { generic_msg, name } => {
+                                    println!("{}", generic_msg);
+
+                                    if let Some(discord_client) = discord_client.clone() {
+                                        tokio::spawn(async move {
+                                            discord_client
+                                                .create_message(ChannelId(discord_channel_id))
+                                                .content("_**".to_string() + &name + "** left the game_")
+                                                .await
+                                        });
+                                    }
+                                },
+                                ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
+                                ConsoleMsgSpecific::PlayerLogin { generic_msg, name, .. } => {
+                                    println!("{}", generic_msg);
+        
+                                    if let Some(discord_client) = discord_client.clone() {
+                                        tokio::spawn(async move {
+                                            discord_client
+                                                .create_message(ChannelId(discord_channel_id))
+                                                .content("_**".to_string() + &name + "** joined the game_")
+                                                .await
+                                        });
+                                    }
+                                },
+                                ConsoleMsgSpecific::PlayerMsg { generic_msg, name, msg } => {
+                                    println!("{}", generic_msg);
+
+                                    if let Some(discord_client) = discord_client.clone() {
+                                        // TODO: error handling
+                                        tokio::spawn(async move {
+                                            discord_client
+                                                .create_message(ChannelId(discord_channel_id))
+                                                .content("**".to_string() + &name + "**  " + &msg)
+                                                .await
+                                        });
+                                    }
+                                },
+                                ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
+                                    // progress_bar.set_position(progress as u64);
+                                },
+                                ConsoleMsgSpecific::SpawnPrepareFinish { time_elapsed_ms, .. } => {
+                                    // progress_bar.finish_and_clear();
+                                    println!("  (finished in {} ms)", time_elapsed_ms);
+                                }
+                            }
+                        },
+                        ServerEvent::StdoutLine(line) => {
+                            println!("{}", line);
+                        },
+                        ServerEvent::StderrLine(line) => {
+                            println!("{}", line);
+                        },
+
+                        ServerEvent::ServerStopped(exit_status, reason) => {
+                            if let Some(reason) = reason {
+                                match reason {
+                                    ShutdownReason::EulaNotAccepted => {
+                                        // TODO: agreeing to EULA should be handled by the library
+                                        println!("Agreeing to EULA!");
+                                        if let Err(e) = agree_to_eula(&opt).await {
+                                            println!("Failed to agree to EULA: {:?}", e);
+                                            cmd_sender.send(ServerCommand::EndInstance).await.unwrap();
+                                            break;
+                                        }
+
+                                        cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                                        last_start_time = Instant::now();
+                                    }
+                                }
+                            } else if exit_status.success() {
+                                cmd_sender.send(ServerCommand::EndInstance).await.unwrap();
+                                break;
+                            } else {
+                                // There are circumstances where the status will be failure
+                                // and attempting to restart the server will always fail. We
+                                // attempt to catch these cases by not restarting if the
+                                // server crashed twice within a small time window
+                                if last_start_time.elapsed().as_secs() < 60 {
+                                    println!("Fatal error believed to have been encountered, not \
+                                        restarting server");
+                                    cmd_sender.send(ServerCommand::EndInstance).await.unwrap();
+                                    break;
+                                } else {
+                                    println!("Restarting server...");
+                                    cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                                    last_start_time = Instant::now();
+                                    // TODO: tell discord that the mc server crashed
+                                }
+                            }
+                        }
                     }
                 },
-                Err(ServerError::EulaNotAccepted) => {
-                    println!("Agreeing to EULA!");
-                    if let Err(e) = agree_to_eula(&opt).await {
-                        println!("Failed to agree to EULA: {:?}", e);
+                Some(line) = our_stdin.next() => {
+                    if let Ok(line) = line {
+                        cmd_sender.send(ServerCommand::WriteCommandToStdin(line)).await.unwrap();
+                    } else {
                         break;
                     }
-                }
+                },
+                else => break,
             }
         }
     });
