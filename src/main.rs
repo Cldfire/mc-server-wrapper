@@ -66,6 +66,7 @@ async fn agree_to_eula(opt: &Opt) -> io::Result<()> {
 async fn handle_discord_event(
     event: (u64, Event),
     _discord_client: DiscordClient,
+    bridge_channel_id: ChannelId
 ) -> Result<Option<ServerCommand>, Error> {
     match event {
         (_, Event::Ready(_)) => {
@@ -79,9 +80,8 @@ async fn handle_discord_event(
         (_, Event::MessageCreate(msg)) => {
             // TODO: maybe some bot chatter should be allowed through?
             // TODO: error handling
-            // TODO: need to make sure message came from the channel we are bridging
-            // to before we send it to the MC server
-            if msg.kind == MessageType::Regular && !msg.author.bot {
+            if msg.kind == MessageType::Regular && !msg.author.bot &&
+                msg.channel_id == bridge_channel_id {
                 let tellraw_msg = MessageBuilder::builder(Payload::text("[D] "))
                     .bold(true)
                     .color(Color::LightPurple)
@@ -171,7 +171,11 @@ fn main() -> Result<(), Error> {
                     let mut cmd_sender_clone = cmd_sender.clone();
 
                     tokio::spawn(async move {
-                        match handle_discord_event(e, client_clone).await {
+                        match handle_discord_event(
+                            e,
+                            client_clone,
+                            ChannelId(discord_channel_id)
+                        ).await {
                             Ok(Some(cmd)) => {
                                 let _ = cmd_sender_clone.send(cmd).await;
                             },
