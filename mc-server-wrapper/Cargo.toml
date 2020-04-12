@@ -5,7 +5,6 @@ authors = ["Cldfire"]
 edition = "2018"
 
 [dependencies]
-chrono = "0.4"
 mc-server-wrapper-lib = { path = "../mc-server-wrapper-lib" }
 structopt = "0.3"
 indicatif = "0.14"

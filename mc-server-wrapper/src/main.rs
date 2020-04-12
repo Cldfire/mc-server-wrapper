@@ -16,7 +16,6 @@ use twilight::{
 
 use minecraft_chat::{MessageBuilder, Payload, Color};
 use mc_server_wrapper_lib::*;
-// TODO: should not have to import this or depend on chrono
 use mc_server_wrapper_lib::parse::*;
 
 use dotenv::dotenv;
@@ -80,12 +79,10 @@ async fn handle_discord_event(
                     .build();
 
                 // TODO: This will not add the message to the server logs
-                println!("{}", ConsoleMsg {
-                    timestamp: chrono::offset::Local::now().naive_local().time(),
-                    thread_name: "".into(),
-                    msg_type: ConsoleMsgType::Info,
-                    msg: "[D] <".to_string() + &msg.author.name + "> " + &msg.content
-                });
+                println!("{}", ConsoleMsg::new(
+                    ConsoleMsgType::Info,
+                    "[D] <".to_string() + &msg.author.name + "> " + &msg.content
+                ));
 
                 Ok(Some(ServerCommand::TellRaw(tellraw_msg.to_json().unwrap())))
             } else {
@@ -190,61 +187,59 @@ fn main() -> Result<(), Error> {
             tokio::select! {
                 e = mc_server.event_receiver.next() => if let Some(e) = e {
                     match e {
-                        ServerEvent::ConsoleEvent(msg) => {
+                        ServerEvent::ConsoleEvent(msg) => match msg {
                             // TODO: need to improve design of these events so we don't
                             // have to have an arm for every variant to get at the
                             // generic_msg
-                            match msg {
-                                ConsoleMsgSpecific::GenericMsg(generic_msg) => println!("{}", generic_msg),
-                                ConsoleMsgSpecific::MustAcceptEula(generic_msg) => {
-                                    println!("{}", generic_msg);
-                                },
-                                ConsoleMsgSpecific::PlayerLostConnection { generic_msg, .. } => println!("{}", generic_msg),
-                                ConsoleMsgSpecific::PlayerLogout { generic_msg, name } => {
-                                    println!("{}", generic_msg);
+                            ConsoleMsgSpecific::GenericMsg(generic_msg) => println!("{}", generic_msg),
+                            ConsoleMsgSpecific::MustAcceptEula(generic_msg) => {
+                                println!("{}", generic_msg);
+                            },
+                            ConsoleMsgSpecific::PlayerLostConnection { generic_msg, .. } => println!("{}", generic_msg),
+                            ConsoleMsgSpecific::PlayerLogout { generic_msg, name } => {
+                                println!("{}", generic_msg);
 
-                                    if let Some(discord_client) = discord_client.clone() {
-                                        tokio::spawn(async move {
-                                            discord_client
-                                                .create_message(ChannelId(discord_channel_id))
-                                                .content("_**".to_string() + &name + "** left the game_")
-                                                .await
-                                        });
-                                    }
-                                },
-                                ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
-                                ConsoleMsgSpecific::PlayerLogin { generic_msg, name, .. } => {
-                                    println!("{}", generic_msg);
-        
-                                    if let Some(discord_client) = discord_client.clone() {
-                                        tokio::spawn(async move {
-                                            discord_client
-                                                .create_message(ChannelId(discord_channel_id))
-                                                .content("_**".to_string() + &name + "** joined the game_")
-                                                .await
-                                        });
-                                    }
-                                },
-                                ConsoleMsgSpecific::PlayerMsg { generic_msg, name, msg } => {
-                                    println!("{}", generic_msg);
-
-                                    if let Some(discord_client) = discord_client.clone() {
-                                        // TODO: error handling
-                                        tokio::spawn(async move {
-                                            discord_client
-                                                .create_message(ChannelId(discord_channel_id))
-                                                .content("**".to_string() + &name + "**  " + &msg)
-                                                .await
-                                        });
-                                    }
-                                },
-                                ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
-                                    // progress_bar.set_position(progress as u64);
-                                },
-                                ConsoleMsgSpecific::SpawnPrepareFinish { time_elapsed_ms, .. } => {
-                                    // progress_bar.finish_and_clear();
-                                    println!("  (finished in {} ms)", time_elapsed_ms);
+                                if let Some(discord_client) = discord_client.clone() {
+                                    tokio::spawn(async move {
+                                        discord_client
+                                            .create_message(ChannelId(discord_channel_id))
+                                            .content("_**".to_string() + &name + "** left the game_")
+                                            .await
+                                    });
                                 }
+                            },
+                            ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
+                            ConsoleMsgSpecific::PlayerLogin { generic_msg, name, .. } => {
+                                println!("{}", generic_msg);
+    
+                                if let Some(discord_client) = discord_client.clone() {
+                                    tokio::spawn(async move {
+                                        discord_client
+                                            .create_message(ChannelId(discord_channel_id))
+                                            .content("_**".to_string() + &name + "** joined the game_")
+                                            .await
+                                    });
+                                }
+                            },
+                            ConsoleMsgSpecific::PlayerMsg { generic_msg, name, msg } => {
+                                println!("{}", generic_msg);
+
+                                if let Some(discord_client) = discord_client.clone() {
+                                    // TODO: error handling
+                                    tokio::spawn(async move {
+                                        discord_client
+                                            .create_message(ChannelId(discord_channel_id))
+                                            .content("**".to_string() + &name + "**  " + &msg)
+                                            .await
+                                    });
+                                }
+                            },
+                            ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
+                                // progress_bar.set_position(progress as u64);
+                            },
+                            ConsoleMsgSpecific::SpawnPrepareFinish { time_elapsed_ms, .. } => {
+                                // progress_bar.finish_and_clear();
+                                println!("  (finished in {} ms)", time_elapsed_ms);
                             }
                         },
                         ServerEvent::StdoutLine(line) => {
@@ -254,34 +249,32 @@ fn main() -> Result<(), Error> {
                             println!("{}", line);
                         },
 
-                        ServerEvent::ServerStopped(exit_status, reason) => {
-                            if let Some(reason) = reason {
-                                match reason {
-                                    ShutdownReason::EulaNotAccepted => {
-                                        println!("Agreeing to EULA!");
-                                        mc_server.cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();
-                                    }
+                        ServerEvent::ServerStopped(exit_status, reason) => if let Some(reason) = reason {
+                            match reason {
+                                ShutdownReason::EulaNotAccepted => {
+                                    println!("Agreeing to EULA!");
+                                    mc_server.cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();
                                 }
-                            } else if exit_status.success() {
-                                // TODO: we eventually need to not stop the server forever here
-                                //
-                                // have a `ShutdownReason` along the lines of "you told me to stop"
+                            }
+                        } else if exit_status.success() {
+                            // TODO: we eventually need to not stop the server forever here
+                            //
+                            // have a `ShutdownReason` along the lines of "you told me to stop"
+                            mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                        } else {
+                            // There are circumstances where the status will be failure
+                            // and attempting to restart the server will always fail. We
+                            // attempt to catch these cases by not restarting if the
+                            // server crashed twice within a small time window
+                            if last_start_time.elapsed().as_secs() < 60 {
+                                println!("Fatal error believed to have been encountered, not \
+                                    restarting server");
                                 mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                             } else {
-                                // There are circumstances where the status will be failure
-                                // and attempting to restart the server will always fail. We
-                                // attempt to catch these cases by not restarting if the
-                                // server crashed twice within a small time window
-                                if last_start_time.elapsed().as_secs() < 60 {
-                                    println!("Fatal error believed to have been encountered, not \
-                                        restarting server");
-                                    mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                                } else {
-                                    println!("Restarting server...");
-                                    mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
-                                    last_start_time = Instant::now();
-                                    // TODO: tell discord that the mc server crashed
-                                }
+                                println!("Restarting server...");
+                                mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                                last_start_time = Instant::now();
+                                // TODO: tell discord that the mc server crashed
                             }
                         },
 

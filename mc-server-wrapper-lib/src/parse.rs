@@ -1,4 +1,5 @@
 use chrono::NaiveTime;
+use chrono::offset::Local;
 use std::fmt;
 
 // TODO: It would be nice to not have the `ConsoleMsg` in every variant
@@ -202,6 +203,16 @@ impl fmt::Display for ConsoleMsg {
 }
 
 impl ConsoleMsg {
+    /// Create a new `ConsoleMsg` with the current time and a blank thread name.
+    pub fn new(msg_type: ConsoleMsgType, msg: String) -> Self {
+        Self {
+            timestamp: Local::now().naive_local().time(),
+            thread_name: "".into(),
+            msg_type,
+            msg
+        }
+    }
+
     /// Constructs a `ConsoleMsg` from a line of console output.
     fn try_parse_from(raw: &str) -> Option<ConsoleMsg> {
         let (mut timestamp, remain) = raw.split_at(raw.find(']')?);

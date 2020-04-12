@@ -619,7 +619,6 @@ checksum = "7ffc5c5338469d4d3ea17d269fa8ea3512ad247247c30bd2df69e68309ed0a08"
 name = "mc-server-wrapper"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "dotenv",
  "indicatif",
  "mc-server-wrapper-lib",
