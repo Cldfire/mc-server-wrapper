@@ -76,60 +76,41 @@ pub enum ShutdownReason {
     EulaNotAccepted
 }
 
-/// Represents a single wrapped Minecraft server that may be running or stopped.
-/// 
-// TODO: this should just wrap the channels to be handed back to the caller.
-// don't need a struct around on the library side it would appear
-//
-// or split into two structs, one that gets passed back and one that is kept
-// library-side
+/// Represents a single wrapped Minecraft server that may be running or stopped
+#[derive(Debug)]
 pub struct McServer {
-    /// Configuration for this server instance
-    // TODO: support editing this config while server is running
-    config: McServerConfig,
-    /// So we can send ourself commands if need be
-    cmd_sender: mpsc::Sender<ServerCommand>,
-    /// Channel via which we send events
-    event_sender: mpsc::Sender<ServerEvent>,
-    /// Handle to the server's stdin if it's running
-    mc_stdin: Arc<Mutex<Option<process::ChildStdin>>>
+    /// Channel through which commands can be sent to the server
+    pub cmd_sender: mpsc::Sender<ServerCommand>,
+    /// Channel through which events are received from the server
+    pub event_receiver: mpsc::Receiver<ServerEvent>
 }
 
 impl McServer {
     /// Create a new `McServer` with the given `McServerConfig`.
     ///
-    /// Returns a tuple containing the `McServer` instance, a `Sender` with
-    /// which to send the server commands, and a `Receiver` with which to
-    /// receive events from the server.
-    ///
     /// Note that the Minecraft server is not launched until you send a command
     /// to cause that to happen.
-    pub async fn new(
-        config: McServerConfig
-    ) -> (Arc<Self>, mpsc::Sender<ServerCommand>, mpsc::Receiver<ServerEvent>) {
+    // TODO: should this be called `manage`?
+    pub fn new(config: McServerConfig) -> Self {
         let (cmd_sender, mut cmd_receiver) = mpsc::channel::<ServerCommand>(64);
         let (event_sender, event_receiver) = mpsc::channel::<ServerEvent>(64);
-        let mc_server = Arc::new(McServer {
+        let mc_server_internal = Arc::new(McServerInternal {
             config,
-            cmd_sender: cmd_sender.clone(),
-            event_sender: event_sender.clone(),
+            event_sender,
             mc_stdin: Arc::new(Mutex::new(None))
         });
 
-        let event_sender_clone = event_sender.clone();
-        let mc_server_clone = mc_server.clone();
+        let mc_server_internal_clone = mc_server_internal.clone();
         // Start a task to receive server commands and handle them appropriately
+        // TODO: move this out of this function
         tokio::spawn(async move {
-            let event_sender = event_sender_clone;
-            let mc_server = mc_server_clone;
-
             while let Some(cmd) = cmd_receiver.next().await {
                 use ServerCommand::*;
-                let mc_server = mc_server.clone();
+                let mc_server_internal = mc_server_internal_clone.clone();
 
                 match cmd {
                     TellRaw(json) => {
-                        let mut mc_stdin = mc_server.mc_stdin.lock().await;
+                        let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
                         if let Some(mc_stdin) = &mut *mc_stdin {
                             // TODO: handle error?
                             let _ = mc_stdin.write_all(
@@ -139,14 +120,14 @@ impl McServer {
                         }
                     },
                     WriteCommandToStdin(text) => {
-                        let mut mc_stdin = mc_server.mc_stdin.lock().await;
+                        let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
                         if let Some(mc_stdin) = &mut *mc_stdin {
                             // TODO: handle error?
                             let _ = mc_stdin.write_all((text + "\n").as_bytes()).await;
                         }
                     },
                     WriteToStdin(text) => {
-                        let mut mc_stdin = mc_server.mc_stdin.lock().await;
+                        let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
                         if let Some(mc_stdin) = &mut *mc_stdin {
                             // TODO: handle error?
                             let _ = mc_stdin.write_all(text.as_bytes()).await;
@@ -156,20 +137,19 @@ impl McServer {
                     StartServer => {
                         // Make sure the server is not already running
                         {
-                            let mc_stdin = mc_server.mc_stdin.lock().await;
+                            let mc_stdin = mc_server_internal.mc_stdin.lock().await;
                             if mc_stdin.is_some() { continue }
                         }
 
-                        let mut event_sender_clone = event_sender.clone();
                         // Spawn a task to drive the server process to completion
                         // and send an event when it exits
                         tokio::spawn(async move {
-                            let ret = mc_server.run_server(mc_server.event_sender.clone()).await;
-                            event_sender_clone.send(ServerEvent::ServerStopped(ret.0, ret.1)).await.unwrap();
+                            let ret = mc_server_internal.run_server().await;
+                            mc_server_internal.event_sender.clone().send(ServerEvent::ServerStopped(ret.0, ret.1)).await.unwrap();
                         });
                     },
                     StopServer { forever } => {
-                        let mut mc_stdin = mc_server.mc_stdin.lock().await;
+                        let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
                         if let Some(mc_stdin) = &mut *mc_stdin {
                             // TODO: handle error?
                             let _ = mc_stdin.write_all(("stop".to_string() + "\n").as_bytes()).await;
@@ -183,17 +163,31 @@ impl McServer {
             }
         });
 
-        (mc_server, cmd_sender, event_receiver)
+        McServer {
+            cmd_sender,
+            event_receiver
+        }
     }
+}
 
+// Groups together stuff needed internally by the library
+#[derive(Debug)]
+struct McServerInternal {
+    /// Configuration for this server instance
+    // TODO: support editing this config while server is running
+    config: McServerConfig,
+    /// Channel through which we send events
+    event_sender: mpsc::Sender<ServerEvent>,
+    /// Handle to the server's stdin if it's running
+    mc_stdin: Arc<Mutex<Option<process::ChildStdin>>>
+}
+
+impl McServerInternal {
     /// Run a minecraft server.
     // TODO: write better docs
     // TODO: maybe split into functions that start the server and interface
     // with it
-    async fn run_server(
-        &self,
-        mut event_sender: mpsc::Sender<ServerEvent>
-    ) -> (ExitStatus, Option<ShutdownReason>) {
+    async fn run_server(&self) -> (ExitStatus, Option<ShutdownReason>) {
         // TODO: don't unwrap / expect, all over this function
         let folder = self.config.server_path.as_path().parent().unwrap();
         let file = self.config.server_path.file_name().unwrap();
@@ -218,7 +212,6 @@ impl McServer {
         // Update the stored handle to the server's stdin
         {
             let mut mc_stdin = self.mc_stdin.lock().await;
-            // TODO: verify that this cannot, in fact, be reached
             if mc_stdin.is_some() { unreachable!() };
             *mc_stdin = Some(process.stdin.take().unwrap());
         }
@@ -230,7 +223,7 @@ impl McServer {
             process.await.expect("child process encountered an error")
         });
 
-        let event_sender_clone = event_sender.clone();
+        let event_sender_clone = self.event_sender.clone();
         let stderr_handle = tokio::spawn(async move {
             use ServerEvent::*;
             let mut event_sender = event_sender_clone;
@@ -240,8 +233,10 @@ impl McServer {
             }
         });
 
+        let event_sender_clone = self.event_sender.clone();
         let stdout_handle = tokio::spawn(async move {
             use ServerEvent::*;
+            let mut event_sender = event_sender_clone;
             // We have this return value so we can keep track of things (such
             // as a EULA that needs agreed to) and send that along with the
             // server shutdown event

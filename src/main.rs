@@ -119,7 +119,7 @@ fn main() -> Result<(), Error> {
             server_path: opt.server_path.clone(),
             memory: opt.memory
         };
-        let (_, mut cmd_sender, mut event_receiver) = McServer::new(mc_config).await;
+        let mut mc_server = McServer::new(mc_config);
 
         let discord_channel_id = opt.discord_channel_id.take()
             .unwrap_or_else(||
@@ -154,7 +154,7 @@ fn main() -> Result<(), Error> {
             let cluster_config = ClusterConfig::builder(&discord_token).build();
             let discord_cluster_temp = Cluster::new(cluster_config);
             discord_cluster_temp.up().await.expect("Could not connect to Discord");
-            let cmd_sender_clone = cmd_sender.clone();
+            let cmd_sender_clone = mc_server.cmd_sender.clone();
 
             let discord_client_clone = discord_client_temp.clone();
             let discord_cluster_clone = discord_cluster_temp.clone();
@@ -193,13 +193,13 @@ fn main() -> Result<(), Error> {
             discord_cluster = None;
         }
 
-        cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+        mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
         let mut last_start_time = Instant::now();
         let mut our_stdin = BufReader::new(tokio::io::stdin()).lines();
 
         loop {
             tokio::select! {
-                e = event_receiver.next() => if let Some(e) = e {
+                e = mc_server.event_receiver.next() => if let Some(e) = e {
                     match e {
                         ServerEvent::ConsoleEvent(msg) => {
                             // TODO: need to improve design of these events so we don't
@@ -273,10 +273,10 @@ fn main() -> Result<(), Error> {
                                         println!("Agreeing to EULA!");
                                         if let Err(e) = agree_to_eula(&opt).await {
                                             println!("Failed to agree to EULA: {:?}", e);
-                                            cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                                            mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                                         }
 
-                                        cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                                        mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
                                         last_start_time = Instant::now();
                                     }
                                 }
@@ -284,7 +284,7 @@ fn main() -> Result<(), Error> {
                                 // TODO: we eventually need to not stop the server forever here
                                 //
                                 // have a `ShutdownReason` along the lines of "you told me to stop"
-                                cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                                mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                             } else {
                                 // There are circumstances where the status will be failure
                                 // and attempting to restart the server will always fail. We
@@ -293,10 +293,10 @@ fn main() -> Result<(), Error> {
                                 if last_start_time.elapsed().as_secs() < 60 {
                                     println!("Fatal error believed to have been encountered, not \
                                         restarting server");
-                                    cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                                    mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                                 } else {
                                     println!("Restarting server...");
-                                    cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                                    mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
                                     last_start_time = Instant::now();
                                     // TODO: tell discord that the mc server crashed
                                 }
@@ -309,7 +309,7 @@ fn main() -> Result<(), Error> {
                 },
                 Some(line) = our_stdin.next() => {
                     if let Ok(line) = line {
-                        cmd_sender.send(ServerCommand::WriteCommandToStdin(line)).await.unwrap();
+                        mc_server.cmd_sender.send(ServerCommand::WriteCommandToStdin(line)).await.unwrap();
                     } else {
                         break;
                     }
