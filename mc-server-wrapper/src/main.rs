@@ -117,7 +117,6 @@ fn main() -> Result<(), Error> {
             );
 
         let discord_client;
-        let discord_cluster;
         // Set up discord bridge if enabled
         if opt.bridge_to_discord {
             if discord_channel_id == 0 {
@@ -138,12 +137,12 @@ fn main() -> Result<(), Error> {
 
             let discord_client_temp = DiscordClient::new(&discord_token);
             let cluster_config = ClusterConfig::builder(&discord_token).build();
-            let discord_cluster_temp = Cluster::new(cluster_config);
-            discord_cluster_temp.up().await.expect("Could not connect to Discord");
+            let discord_cluster = Cluster::new(cluster_config);
+            discord_cluster.up().await.expect("Could not connect to Discord");
             let cmd_sender_clone = mc_server.cmd_sender.clone();
 
             let discord_client_clone = discord_client_temp.clone();
-            let discord_cluster_clone = discord_cluster_temp.clone();
+            let discord_cluster_clone = discord_cluster.clone();
             tokio::spawn(async move {
                 let discord_client = discord_client_clone;
                 let discord_cluster = discord_cluster_clone;
@@ -173,10 +172,8 @@ fn main() -> Result<(), Error> {
             });
 
             discord_client = Some(discord_client_temp);
-            discord_cluster = Some(discord_cluster_temp);
         } else {
             discord_client = None;
-            discord_cluster = None;
         }
 
         mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
@@ -187,60 +184,59 @@ fn main() -> Result<(), Error> {
             tokio::select! {
                 e = mc_server.event_receiver.next() => if let Some(e) = e {
                     match e {
-                        ServerEvent::ConsoleEvent(msg) => match msg {
-                            // TODO: need to improve design of these events so we don't
-                            // have to have an arm for every variant to get at the
-                            // generic_msg
-                            ConsoleMsgSpecific::GenericMsg(generic_msg) => println!("{}", generic_msg),
-                            ConsoleMsgSpecific::MustAcceptEula(generic_msg) => {
-                                println!("{}", generic_msg);
-                            },
-                            ConsoleMsgSpecific::PlayerLostConnection { generic_msg, .. } => println!("{}", generic_msg),
-                            ConsoleMsgSpecific::PlayerLogout { generic_msg, name } => {
-                                println!("{}", generic_msg);
+                        ServerEvent::ConsoleEvent(console_msg, Some(specific_msg)) => {
+                            let mut print_msg = true;
 
-                                if let Some(discord_client) = discord_client.clone() {
-                                    tokio::spawn(async move {
-                                        discord_client
-                                            .create_message(ChannelId(discord_channel_id))
-                                            .content("_**".to_string() + &name + "** left the game_")
-                                            .await
-                                    });
-                                }
-                            },
-                            ConsoleMsgSpecific::PlayerAuth { generic_msg, .. } => println!("{}", generic_msg),
-                            ConsoleMsgSpecific::PlayerLogin { generic_msg, name, .. } => {
-                                println!("{}", generic_msg);
-    
-                                if let Some(discord_client) = discord_client.clone() {
-                                    tokio::spawn(async move {
-                                        discord_client
-                                            .create_message(ChannelId(discord_channel_id))
-                                            .content("_**".to_string() + &name + "** joined the game_")
-                                            .await
-                                    });
-                                }
-                            },
-                            ConsoleMsgSpecific::PlayerMsg { generic_msg, name, msg } => {
-                                println!("{}", generic_msg);
-
-                                if let Some(discord_client) = discord_client.clone() {
-                                    // TODO: error handling
-                                    tokio::spawn(async move {
-                                        discord_client
-                                            .create_message(ChannelId(discord_channel_id))
-                                            .content("**".to_string() + &name + "**  " + &msg)
-                                            .await
-                                    });
-                                }
-                            },
-                            ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
-                                // progress_bar.set_position(progress as u64);
-                            },
-                            ConsoleMsgSpecific::SpawnPrepareFinish { time_elapsed_ms, .. } => {
-                                // progress_bar.finish_and_clear();
-                                println!("  (finished in {} ms)", time_elapsed_ms);
+                            match specific_msg {
+                                ConsoleMsgSpecific::PlayerLogout { name } => {
+                                    if let Some(discord_client) = discord_client.clone() {
+                                        tokio::spawn(async move {
+                                            discord_client
+                                                .create_message(ChannelId(discord_channel_id))
+                                                .content("_**".to_string() + &name + "** left the game_")
+                                                .await
+                                        });
+                                    }
+                                },
+                                ConsoleMsgSpecific::PlayerLogin { name, .. } => {
+                                    if let Some(discord_client) = discord_client.clone() {
+                                        tokio::spawn(async move {
+                                            discord_client
+                                                .create_message(ChannelId(discord_channel_id))
+                                                .content("_**".to_string() + &name + "** joined the game_")
+                                                .await
+                                        });
+                                    }
+                                },
+                                ConsoleMsgSpecific::PlayerMsg { name, msg } => {
+                                    if let Some(discord_client) = discord_client.clone() {
+                                        // TODO: error handling
+                                        tokio::spawn(async move {
+                                            discord_client
+                                                .create_message(ChannelId(discord_channel_id))
+                                                .content("**".to_string() + &name + "**  " + &msg)
+                                                .await
+                                        });
+                                    }
+                                },
+                                ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
+                                    // progress_bar.set_position(progress as u64);
+                                    print_msg = false;
+                                },
+                                ConsoleMsgSpecific::SpawnPrepareFinish { time_elapsed_ms, .. } => {
+                                    // progress_bar.finish_and_clear();
+                                    print_msg = false;
+                                    println!("  (finished in {} ms)", time_elapsed_ms);
+                                },
+                                _ => {}
                             }
+
+                            if print_msg {
+                                println!("{}", console_msg);
+                            }
+                        },
+                        ServerEvent::ConsoleEvent(console_msg, None) => {
+                            println!("{}", console_msg);
                         },
                         ServerEvent::StdoutLine(line) => {
                             println!("{}", line);

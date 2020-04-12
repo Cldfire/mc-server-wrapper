@@ -2,20 +2,15 @@ use chrono::NaiveTime;
 use chrono::offset::Local;
 use std::fmt;
 
-// TODO: It would be nice to not have the `ConsoleMsg` in every variant
-// however, strategies for doing so make it difficult to use `?` in
-// `ConsoleMsgSpecific::try_parse_from`...
-#[derive(Debug)]
+/// More informative representations for specific, supported console messages.
+#[derive(Debug, PartialEq)]
 pub enum ConsoleMsgSpecific {
-    GenericMsg(ConsoleMsg),
-    MustAcceptEula(ConsoleMsg),
+    MustAcceptEula,
     PlayerMsg {
-        generic_msg: ConsoleMsg,
         name: String,
         msg: String
     },
     PlayerLogin {
-        generic_msg: ConsoleMsg,
         name: String,
         ip: String,
         entity_id: u32,
@@ -24,42 +19,35 @@ pub enum ConsoleMsgSpecific {
         world: Option<String>
     },
     PlayerAuth {
-        generic_msg: ConsoleMsg,
         name: String,
         uuid: String
     },
     PlayerLogout {
-        generic_msg: ConsoleMsg,
         name: String
     },
     PlayerLostConnection {
-        generic_msg: ConsoleMsg,
         name: String,
         reason: String
     },
     SpawnPrepareProgress {
-        generic_msg: ConsoleMsg,
         progress: u8
     },
     SpawnPrepareFinish {
-        generic_msg: ConsoleMsg,
         time_elapsed_ms: u64
     }
 }
 
 impl ConsoleMsgSpecific {
-    /// Tries to determine a `ConsoleMsgSpecific` variant for a line of console
-    /// output.
-    pub fn try_parse_from(raw: &str) -> Option<ConsoleMsgSpecific> {
-        let parsed = ConsoleMsg::try_parse_from(raw)?;
-
+    /// Tries to determine a `ConsoleMsgSpecific` variant for the given
+    /// `ConsoleMsg`.
+    pub(crate) fn try_parse_from(console_msg: &ConsoleMsg) -> Option<ConsoleMsgSpecific> {
         // Note that the order in which these conditions are tested is important:
         // we need to make sure that we are not dealing with a player message before
         // it is okay to test for other things, for instance
-        Some(if parsed.thread_name.contains("User Authenticator") {
+        Some(if console_msg.thread_name.contains("User Authenticator") {
             let (name, uuid) = {
                 // Get rid of "UUID of player "
-                let minus_start = &parsed.msg[15..];
+                let minus_start = &console_msg.msg[15..];
                 let (name, remain) = minus_start.split_at(minus_start.find(' ').unwrap());
 
                 // Slice `remain` to get rid of " is "
@@ -67,20 +55,19 @@ impl ConsoleMsgSpecific {
             };
 
             ConsoleMsgSpecific::PlayerAuth {
-                generic_msg: parsed,
                 name,
                 uuid
             }
-        } else if parsed.msg_type == ConsoleMsgType::Info && (
-                parsed.thread_name.starts_with("Async Chat Thread") ||
-                parsed.msg.starts_with("<") && parsed.thread_name == "Server thread"
+        } else if console_msg.msg_type == ConsoleMsgType::Info && (
+                console_msg.thread_name.starts_with("Async Chat Thread") ||
+                console_msg.msg.starts_with("<") && console_msg.thread_name == "Server thread"
             ) {
                 let (name, msg) = {
-                    let (name, remain) = parsed.msg.split_at(if let Some(idx) = parsed.msg.find('>') {
+                    let (name, remain) = console_msg.msg.split_at(if let Some(idx) = console_msg.msg.find('>') {
                         idx
                     } else {
-                        // This is not a player message, return a generic one
-                        return Some(ConsoleMsgSpecific::GenericMsg(parsed));
+                        // This is not a player message
+                        return None;
                     });
 
                     // Trim "<" from the player's name and "> " from the msg
@@ -88,17 +75,16 @@ impl ConsoleMsgSpecific {
                 };
 
                 ConsoleMsgSpecific::PlayerMsg {
-                    generic_msg: parsed,
                     name,
                     msg
                 }
-        } else if parsed.msg == "You need to agree to the EULA in order to run the server. Go to \
+        } else if console_msg.msg == "You need to agree to the EULA in order to run the server. Go to \
                                 eula.txt for more info." &&
-            parsed.msg_type == ConsoleMsgType::Info {
-                ConsoleMsgSpecific::MustAcceptEula(parsed)
-        } else if parsed.msg.contains("logged in with entity id") &&
-            parsed.msg_type == ConsoleMsgType::Info {
-                let (name, remain) = parsed.msg.split_at(parsed.msg.find('[').unwrap());
+            console_msg.msg_type == ConsoleMsgType::Info {
+                ConsoleMsgSpecific::MustAcceptEula
+        } else if console_msg.msg.contains("logged in with entity id") &&
+            console_msg.msg_type == ConsoleMsgType::Info {
+                let (name, remain) = console_msg.msg.split_at(console_msg.msg.find('[').unwrap());
                 let name = name.to_string();
 
                 let (ip, mut remain) = remain.split_at(remain.find(']').unwrap());
@@ -134,57 +120,52 @@ impl ConsoleMsgSpecific {
 
 
                 ConsoleMsgSpecific::PlayerLogin {
-                    generic_msg: parsed,
                     name,
                     ip,
                     entity_id,
                     coords: (x_coord, y_coord, z_coord),
                     world
                 }
-        } else if parsed.msg.contains("Preparing spawn area: ") &&
-            parsed.msg_type == ConsoleMsgType::Info {
-                let progress = parsed.msg[
-                    parsed.msg.find(':').unwrap() + 2..parsed.msg.len() - 1
+        } else if console_msg.msg.contains("Preparing spawn area: ") &&
+            console_msg.msg_type == ConsoleMsgType::Info {
+                let progress = console_msg.msg[
+                    console_msg.msg.find(':').unwrap() + 2..console_msg.msg.len() - 1
                 ].parse().unwrap();
 
                 ConsoleMsgSpecific::SpawnPrepareProgress {
-                    generic_msg: parsed,
                     progress
                 }
-        } else if parsed.msg.contains("Time elapsed: ") {
-            let time_elapsed_ms = parsed.msg[
-                parsed.msg.find(':').unwrap() + 2..parsed.msg.find("ms").unwrap() - 1
+        } else if console_msg.msg.contains("Time elapsed: ") {
+            let time_elapsed_ms = console_msg.msg[
+                console_msg.msg.find(':').unwrap() + 2..console_msg.msg.find("ms").unwrap() - 1
             ].parse().unwrap();
 
             ConsoleMsgSpecific::SpawnPrepareFinish {
-                generic_msg: parsed,
                 time_elapsed_ms
             }
-        } else if parsed.msg.contains("lost connection: ") {
-            let (name, remain) = parsed.msg.split_at(parsed.msg.find(' ').unwrap());
+        } else if console_msg.msg.contains("lost connection: ") {
+            let (name, remain) = console_msg.msg.split_at(console_msg.msg.find(' ').unwrap());
             let name = name.into();
             let reason = remain[remain.find(':').unwrap() + 2..].into();
 
             ConsoleMsgSpecific::PlayerLostConnection {
-                generic_msg: parsed,
                 name,
                 reason
             }
-        } else if parsed.msg.contains("left the game") {
-            let name = parsed.msg.split_at(parsed.msg.find(' ').unwrap()).0.into();
+        } else if console_msg.msg.contains("left the game") {
+            let name = console_msg.msg.split_at(console_msg.msg.find(' ').unwrap()).0.into();
 
             ConsoleMsgSpecific::PlayerLogout {
-                generic_msg: parsed,
                 name
             }
         } else {
             // It wasn't anything specific we're looking for
-            ConsoleMsgSpecific::GenericMsg(parsed)
+            return None;
         })
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ConsoleMsg {
     pub timestamp: NaiveTime,
     pub thread_name: String,
@@ -214,7 +195,7 @@ impl ConsoleMsg {
     }
 
     /// Constructs a `ConsoleMsg` from a line of console output.
-    fn try_parse_from(raw: &str) -> Option<ConsoleMsg> {
+    pub(crate) fn try_parse_from(raw: &str) -> Option<ConsoleMsg> {
         let (mut timestamp, remain) = raw.split_at(raw.find(']')?);
         timestamp = &timestamp[1..];
 
@@ -237,10 +218,13 @@ impl ConsoleMsg {
     }
 }
 
+/// Various types of console messages that can occur
 #[derive(Debug, PartialEq)]
 pub enum ConsoleMsgType {
     Info,
     Warn,
+    Error,
+    /// An unknown type of message
     Unknown
 }
 
@@ -249,6 +233,7 @@ impl ConsoleMsgType {
         match raw {
             "INFO" => ConsoleMsgType::Info,
             "WARN" => ConsoleMsgType::Warn,
+            "ERROR" => ConsoleMsgType::Error,
             _ => ConsoleMsgType::Unknown
         }
     }

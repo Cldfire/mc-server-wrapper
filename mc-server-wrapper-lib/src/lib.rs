@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::path::PathBuf;
 use std::io;
 
-use crate::parse::ConsoleMsgSpecific;
+use crate::parse::{ConsoleMsg, ConsoleMsgSpecific};
 
 #[cfg(test)]
 mod test;
@@ -28,14 +28,23 @@ pub struct McServerConfig {
 
 /// Events from a Minecraft server.
 // TODO: derive serialize, deserialize
-// TODO: should we embed `ConsoleMsgSpecific` or hide that?
 // TODO: move to different file
 // TODO: restructure so there are two main variants: stuff you get directly
 // from the server, and stuff more related to management
 #[derive(Debug)]
 pub enum ServerEvent {
     /// An event parsed from the server's console output (stderr or stdout)
-    ConsoleEvent(ConsoleMsgSpecific),
+    /// 
+    /// You are given a `ConsoleMsg` representing a generic form of the console
+    /// output. This can be directly printed to your program's stdout in order
+    /// to replicate (with slightly nicer formatting) the Minecraft server's
+    /// output.
+    /// 
+    /// You are also given an `Option<ConsoleMsgSpecific>`. Some `ConsoleMsg`s
+    /// can be parsed into more specific representations, and in that case you
+    /// will be given one. These are not for printing; they are useful for
+    /// triggering actions based on events coming from the server.
+    ConsoleEvent(ConsoleMsg, Option<ConsoleMsgSpecific>),
     /// An unknown line received from the server's stdout
     StdoutLine(String),
     /// An unknown line received from the server's stderr
@@ -267,24 +276,19 @@ impl McServerInternal {
             let mut shutdown_reason = None;
 
             while let Some(line) = stdout.next_line().await.unwrap() {
-                let parsed = match ConsoleMsgSpecific::try_parse_from(&line) {
-                    Some(msg) => msg,
-                    None => {
-                        // spigot servers print lines that reach this branch ("\n",
-                        // "Loading libraries, please wait...")
-                        event_sender.send(StdoutLine(line)).await.unwrap();
-                        continue;
-                    }
-                };
+                if let Some(console_msg) = ConsoleMsg::try_parse_from(&line) {
+                    let specific_msg = ConsoleMsgSpecific::try_parse_from(&console_msg);
 
-                match &parsed {
-                    ConsoleMsgSpecific::MustAcceptEula(_) => {
+                    if specific_msg == Some(ConsoleMsgSpecific::MustAcceptEula) {
                         shutdown_reason = Some(ShutdownReason::EulaNotAccepted);
-                    },
-                    _ => {}
-                }
+                    }
 
-                event_sender.send(ConsoleEvent(parsed)).await.unwrap();
+                    event_sender.send(ConsoleEvent(console_msg, specific_msg)).await.unwrap();
+                } else {
+                    // spigot servers print lines that reach this branch ("\n",
+                    // "Loading libraries, please wait...")
+                    event_sender.send(StdoutLine(line)).await.unwrap();
+                }
             }
 
             shutdown_reason
