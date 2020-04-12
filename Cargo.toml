@@ -1,14 +1,6 @@
-[package]
-name = "mc-wrapper"
-version = "0.1.0"
-authors = ["Cldfire"]
-edition = "2018"
+[workspace]
+members = [
+    "mc-server-wrapper",
+    "mc-server-wrapper-lib"
+]
 
-[dependencies]
-structopt = "0.3"
-chrono = "0.4"
-indicatif = "0.14"
-tokio = { version = "0.2", features = ["full"] }
-dotenv = "0.15"
-twilight = { git = "https://github.com/twilight-rs/twilight.git" }
-minecraft-chat = "0.1"

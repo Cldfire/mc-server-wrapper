@@ -13,6 +13,10 @@ use std::io;
 
 use crate::parse::ConsoleMsgSpecific;
 
+#[cfg(test)]
+mod test;
+pub mod parse;
+
 /// Configuration provided to setup an `McServer` instance.
 #[derive(Debug)]
 pub struct McServerConfig {

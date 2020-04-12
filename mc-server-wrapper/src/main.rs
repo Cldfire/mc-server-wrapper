@@ -15,18 +15,15 @@ use twilight::{
 };
 
 use minecraft_chat::{MessageBuilder, Payload, Color};
+use mc_server_wrapper_lib::*;
+// TODO: should not have to import this or depend on chrono
+use mc_server_wrapper_lib::parse::*;
 
 use dotenv::dotenv;
 use structopt::StructOpt;
-use crate::server_wrapper::*;
 use crate::error::*;
-use crate::parse::{ConsoleMsgSpecific, ConsoleMsg, ConsoleMsgType};
 
-#[cfg(test)]
-mod test;
 mod error;
-mod parse;
-mod server_wrapper;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "mc-wrapper")]
