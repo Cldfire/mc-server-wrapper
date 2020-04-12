@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::path::PathBuf;
 
 use crate::parse::ConsoleMsgSpecific;
-use crate::command::ServerCommand;
 
 /// Configuration provided to setup an `McServer` instance.
 #[derive(Debug)]
@@ -39,6 +38,36 @@ pub enum ServerEvent {
     ServerStopped(ExitStatus, Option<ShutdownReason>)
 }
 
+/// Commands that can be sent over channels to be performed by the MC server.
+///
+/// Note that all commands will be ignored if they cannot be performed (i.e.,
+/// telling the server to send a message )
+#[derive(Debug)]
+pub enum ServerCommand {
+    /// Send a message to all players on the server
+    ///
+    /// Message should be JSON of the following format:
+    /// https://minecraft.gamepedia.com/Raw_JSON_text_format
+    TellRaw(String),
+    /// Write the given string to the server's stdin as a command
+    ///
+    /// This means that the given string will have "\n" appended to it
+    WriteCommandToStdin(String),
+    /// Write the given string verbatim to stdin
+    WriteToStdin(String),
+
+    /// Start the Minecraft server (if it is stopped)
+    StartServer,
+    /// Stop the Minecraft server (if it is running)
+    /// 
+    /// Setting `forever` to true will cause the `McServer` instance to stop
+    /// listening for commands and gracefully shutdown everything related to
+    /// it.
+    StopServer {
+        forever: bool
+    }
+}
+
 /// Reasons that a Minecraft server stopped running
 // TODO: add variant indicating user requested server be stopped
 #[derive(Debug)]
@@ -48,6 +77,12 @@ pub enum ShutdownReason {
 }
 
 /// Represents a single wrapped Minecraft server that may be running or stopped.
+/// 
+// TODO: this should just wrap the channels to be handed back to the caller.
+// don't need a struct around on the library side it would appear
+//
+// or split into two structs, one that gets passed back and one that is kept
+// library-side
 pub struct McServer {
     /// Configuration for this server instance
     // TODO: support editing this config while server is running
@@ -87,12 +122,10 @@ impl McServer {
         tokio::spawn(async move {
             let event_sender = event_sender_clone;
             let mc_server = mc_server_clone;
-            let cmd_sender = mc_server.cmd_sender.clone();
 
             while let Some(cmd) = cmd_receiver.next().await {
                 use ServerCommand::*;
                 let mc_server = mc_server.clone();
-                let mut cmd_sender = cmd_sender.clone();
 
                 match cmd {
                     TellRaw(json) => {
@@ -135,17 +168,16 @@ impl McServer {
                             event_sender_clone.send(ServerEvent::ServerStopped(ret.0, ret.1)).await.unwrap();
                         });
                     },
-                    StopServer => {
+                    StopServer { forever } => {
                         let mut mc_stdin = mc_server.mc_stdin.lock().await;
                         if let Some(mc_stdin) = &mut *mc_stdin {
                             // TODO: handle error?
                             let _ = mc_stdin.write_all(("stop".to_string() + "\n").as_bytes()).await;
                         }
-                    },
 
-                    EndInstance => {
-                        cmd_sender.send(StopServer).await.unwrap();
-                        break;
+                        if forever {
+                            break;
+                        }
                     }
                 }
             }
@@ -156,6 +188,8 @@ impl McServer {
 
     /// Run a minecraft server.
     // TODO: write better docs
+    // TODO: maybe split into functions that start the server and interface
+    // with it
     async fn run_server(
         &self,
         mut event_sender: mpsc::Sender<ServerEvent>

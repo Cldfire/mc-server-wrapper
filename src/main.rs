@@ -22,12 +22,10 @@ use dotenv::dotenv;
 use structopt::StructOpt;
 use crate::server_wrapper::*;
 use crate::error::*;
-use crate::command::ServerCommand;
 use crate::parse::{ConsoleMsgSpecific, ConsoleMsg, ConsoleMsgType};
 
 #[cfg(test)]
 mod test;
-mod command;
 mod error;
 mod parse;
 mod server_wrapper;
@@ -81,6 +79,8 @@ async fn handle_discord_event(
         (_, Event::MessageCreate(msg)) => {
             // TODO: maybe some bot chatter should be allowed through?
             // TODO: error handling
+            // TODO: need to make sure message came from the channel we are bridging
+            // to before we send it to the MC server
             if msg.kind == MessageType::Regular && !msg.author.bot {
                 let tellraw_msg = MessageBuilder::builder(Payload::text("[D] "))
                     .bold(true)
@@ -195,7 +195,7 @@ fn main() -> Result<(), Error> {
 
         loop {
             tokio::select! {
-                Some(e) = event_receiver.next() => {
+                e = event_receiver.next() => if let Some(e) = e {
                     match e {
                         ServerEvent::ConsoleEvent(msg) => {
                             // TODO: need to improve design of these events so we don't
@@ -269,8 +269,7 @@ fn main() -> Result<(), Error> {
                                         println!("Agreeing to EULA!");
                                         if let Err(e) = agree_to_eula(&opt).await {
                                             println!("Failed to agree to EULA: {:?}", e);
-                                            cmd_sender.send(ServerCommand::EndInstance).await.unwrap();
-                                            break;
+                                            cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                                         }
 
                                         cmd_sender.send(ServerCommand::StartServer).await.unwrap();
@@ -278,8 +277,10 @@ fn main() -> Result<(), Error> {
                                     }
                                 }
                             } else if exit_status.success() {
-                                cmd_sender.send(ServerCommand::EndInstance).await.unwrap();
-                                break;
+                                // TODO: we eventually need to not stop the server forever here
+                                //
+                                // have a `ShutdownReason` along the lines of "you told me to stop"
+                                cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                             } else {
                                 // There are circumstances where the status will be failure
                                 // and attempting to restart the server will always fail. We
@@ -288,8 +289,7 @@ fn main() -> Result<(), Error> {
                                 if last_start_time.elapsed().as_secs() < 60 {
                                     println!("Fatal error believed to have been encountered, not \
                                         restarting server");
-                                    cmd_sender.send(ServerCommand::EndInstance).await.unwrap();
-                                    break;
+                                    cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                                 } else {
                                     println!("Restarting server...");
                                     cmd_sender.send(ServerCommand::StartServer).await.unwrap();
@@ -299,6 +299,9 @@ fn main() -> Result<(), Error> {
                             }
                         }
                     }
+                } else {
+                    // `McServer` instance was shut down forever. Exit program
+                    break;
                 },
                 Some(line) = our_stdin.next() => {
                     if let Ok(line) = line {
