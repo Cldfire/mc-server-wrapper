@@ -4,10 +4,12 @@ use tokio::sync::mpsc;
 use tokio::stream::StreamExt;
 use tokio::process;
 use tokio::sync::Mutex;
+use tokio::fs::File;
 
 use std::process::{Stdio, ExitStatus};
 use std::sync::Arc;
 use std::path::PathBuf;
+use std::io;
 
 use crate::parse::ConsoleMsgSpecific;
 
@@ -24,6 +26,8 @@ pub struct McServerConfig {
 // TODO: derive serialize, deserialize
 // TODO: should we embed `ConsoleMsgSpecific` or hide that?
 // TODO: move to different file
+// TODO: restructure so there are two main variants: stuff you get directly
+// from the server, and stuff more related to management
 #[derive(Debug)]
 pub enum ServerEvent {
     /// An event parsed from the server's console output (stderr or stdout)
@@ -35,7 +39,10 @@ pub enum ServerEvent {
 
     /// The Minecraft server process exited with the given exit status and, if
     /// known, a reason for exiting
-    ServerStopped(ExitStatus, Option<ShutdownReason>)
+    ServerStopped(ExitStatus, Option<ShutdownReason>),
+
+    /// Response to `AgreeToEula`
+    AgreeToEulaResult(io::Result<()>)
 }
 
 /// Commands that can be sent over channels to be performed by the MC server.
@@ -56,6 +63,8 @@ pub enum ServerCommand {
     /// Write the given string verbatim to stdin
     WriteToStdin(String),
 
+    /// Agree to the EULA (required to run the server)
+    AgreeToEula,
     /// Start the Minecraft server (if it is stopped)
     StartServer,
     /// Stop the Minecraft server (if it is running)
@@ -106,6 +115,7 @@ impl McServer {
         tokio::spawn(async move {
             while let Some(cmd) = cmd_receiver.next().await {
                 use ServerCommand::*;
+                use ServerEvent::*;
                 let mc_server_internal = mc_server_internal_clone.clone();
 
                 match cmd {
@@ -133,7 +143,14 @@ impl McServer {
                             let _ = mc_stdin.write_all(text.as_bytes()).await;
                         }
                     },
-
+                    
+                    AgreeToEula => {
+                        tokio::spawn(async move {
+                            mc_server_internal.event_sender.clone().send(
+                                AgreeToEulaResult(mc_server_internal.agree_to_eula().await)
+                            ).await.unwrap();
+                        });
+                    },   
                     StartServer => {
                         // Make sure the server is not already running
                         {
@@ -145,7 +162,7 @@ impl McServer {
                         // and send an event when it exits
                         tokio::spawn(async move {
                             let ret = mc_server_internal.run_server().await;
-                            mc_server_internal.event_sender.clone().send(ServerEvent::ServerStopped(ret.0, ret.1)).await.unwrap();
+                            mc_server_internal.event_sender.clone().send(ServerStopped(ret.0, ret.1)).await.unwrap();
                         });
                     },
                     StopServer { forever } => {
@@ -283,5 +300,14 @@ impl McServerInternal {
         }
 
         (status.unwrap(), stdout_val.unwrap())
+    }
+
+    /// Overwrites the `eula.txt` file with the contents `eula=true`.
+    async fn agree_to_eula(&self) -> io::Result<()> {
+        let mut file = File::create(
+            self.config.server_path.parent().unwrap().join("eula.txt")
+        ).await?;
+
+        file.write_all(b"eula=true").await
     }
 }

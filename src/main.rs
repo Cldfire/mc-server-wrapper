@@ -1,9 +1,7 @@
 use std::path::PathBuf;
-use std::io;
 use std::env;
 use std::time::{Duration, Instant};
 
-use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 use tokio::stream::StreamExt;
@@ -55,12 +53,6 @@ pub struct Opt {
     /// Amount of memory in megabytes to allocate for the server
     #[structopt(short = "m", long = "memory", default_value = "1024")]
     memory: u16
-}
-
-/// Overwrites the `eula.txt` file with the contents `eula=true`.
-async fn agree_to_eula(opt: &Opt) -> io::Result<()> {
-    let mut file = File::create(opt.server_path.parent().unwrap().join("eula.txt")).await?;
-    file.write_all(b"eula=true").await
 }
 
 async fn handle_discord_event(
@@ -269,15 +261,8 @@ fn main() -> Result<(), Error> {
                             if let Some(reason) = reason {
                                 match reason {
                                     ShutdownReason::EulaNotAccepted => {
-                                        // TODO: agreeing to EULA should be handled by the library
                                         println!("Agreeing to EULA!");
-                                        if let Err(e) = agree_to_eula(&opt).await {
-                                            println!("Failed to agree to EULA: {:?}", e);
-                                            mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                                        }
-
-                                        mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
-                                        last_start_time = Instant::now();
+                                        mc_server.cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();
                                     }
                                 }
                             } else if exit_status.success() {
@@ -300,6 +285,16 @@ fn main() -> Result<(), Error> {
                                     last_start_time = Instant::now();
                                     // TODO: tell discord that the mc server crashed
                                 }
+                            }
+                        },
+
+                        ServerEvent::AgreeToEulaResult(res) => {
+                            if let Err(e) = res {
+                                println!("Failed to agree to EULA: {:?}", e);
+                                mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                            } else {
+                                mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                                last_start_time = Instant::now();
                             }
                         }
                     }
