@@ -17,6 +17,7 @@ use twilight::{
 use minecraft_chat::{MessageBuilder, Payload, Color};
 use mc_server_wrapper_lib::*;
 use mc_server_wrapper_lib::parse::*;
+use indicatif::{ProgressBar, ProgressStyle};
 
 use dotenv::dotenv;
 use structopt::StructOpt;
@@ -180,6 +181,11 @@ fn main() -> Result<(), Error> {
         let mut last_start_time = Instant::now();
         let mut our_stdin = BufReader::new(tokio::io::stdin()).lines();
 
+        let progress_bar = ProgressBar::new(100);
+        progress_bar.set_style(ProgressStyle::default_bar()
+            .template("{bar:30[>20]} {pos:>2}%")
+        );
+
         loop {
             tokio::select! {
                 e = mc_server.event_receiver.next() => if let Some(e) = e {
@@ -220,11 +226,11 @@ fn main() -> Result<(), Error> {
                                     }
                                 },
                                 ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
-                                    // progress_bar.set_position(progress as u64);
+                                    progress_bar.set_position(progress as u64);
                                     print_msg = false;
                                 },
                                 ConsoleMsgSpecific::SpawnPrepareFinish { time_elapsed_ms, .. } => {
-                                    // progress_bar.finish_and_clear();
+                                    progress_bar.finish_and_clear();
                                     print_msg = false;
                                     println!("  (finished in {} ms)", time_elapsed_ms);
                                 },
