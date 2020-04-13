@@ -15,10 +15,11 @@ use twilight::{
 };
 
 use minecraft_chat::{MessageBuilder, Payload, Color};
-use mc_server_wrapper_lib::*;
+use mc_server_wrapper_lib::{McServer, McServerConfig};
 use mc_server_wrapper_lib::parse::*;
-use indicatif::{ProgressBar, ProgressStyle};
+use mc_server_wrapper_lib::communication::*;
 
+use indicatif::{ProgressBar, ProgressStyle};
 use dotenv::dotenv;
 use structopt::StructOpt;
 use crate::error::*;
