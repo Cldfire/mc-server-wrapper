@@ -95,6 +95,24 @@ async fn handle_discord_event(
     }
 }
 
+/// Sends the given text to the given Discord channel if the given client is `Some`.
+// TODO: text passed to this is concatenated even if the message doesn't end up
+// being sent
+async fn send_discord_msg(
+    discord_client: Option<DiscordClient>,
+    channel_id: ChannelId,
+    text: String
+) -> Result<(), Error> {
+    if let Some(discord_client) = discord_client {
+        discord_client
+            .create_message(channel_id)
+            .content(text)
+            .await?;
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<(), Error> {
     let mut rt = Runtime::new().unwrap();
 
@@ -196,35 +214,26 @@ fn main() -> Result<(), Error> {
 
                             match specific_msg {
                                 ConsoleMsgSpecific::PlayerLogout { name } => {
-                                    if let Some(discord_client) = discord_client.clone() {
-                                        tokio::spawn(async move {
-                                            discord_client
-                                                .create_message(ChannelId(discord_channel_id))
-                                                .content("_**".to_string() + &name + "** left the game_")
-                                                .await
-                                        });
-                                    }
+                                    let _ = tokio::spawn(send_discord_msg(
+                                        discord_client.clone(),
+                                        ChannelId(discord_channel_id),
+                                        "_**".to_string() + &name + "** left the game_"
+                                    )).await;
                                 },
                                 ConsoleMsgSpecific::PlayerLogin { name, .. } => {
-                                    if let Some(discord_client) = discord_client.clone() {
-                                        tokio::spawn(async move {
-                                            discord_client
-                                                .create_message(ChannelId(discord_channel_id))
-                                                .content("_**".to_string() + &name + "** joined the game_")
-                                                .await
-                                        });
-                                    }
+                                    // TODO: error handling strategy?
+                                    let _ = tokio::spawn(send_discord_msg(
+                                        discord_client.clone(),
+                                        ChannelId(discord_channel_id),
+                                        "_**".to_string() + &name + "** joined the game_"
+                                    )).await;
                                 },
                                 ConsoleMsgSpecific::PlayerMsg { name, msg } => {
-                                    if let Some(discord_client) = discord_client.clone() {
-                                        // TODO: error handling
-                                        tokio::spawn(async move {
-                                            discord_client
-                                                .create_message(ChannelId(discord_channel_id))
-                                                .content("**".to_string() + &name + "**  " + &msg)
-                                                .await
-                                        });
-                                    }
+                                    let _ = tokio::spawn(send_discord_msg(
+                                        discord_client.clone(),
+                                        ChannelId(discord_channel_id),
+                                        "**".to_string() + &name + "**  " + &msg
+                                    )).await;
                                 },
                                 ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
                                     progress_bar.set_position(progress as u64);
