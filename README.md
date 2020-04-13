@@ -31,3 +31,7 @@ These environment variables can also be provided in a `.env` file of the above f
     * Chat from the web
     * Different levels of accounts (user, admin)
 * _further ideas here_
+
+## Library
+
+The binary for this project is built on top of a library; if you want to implement a different feature set than the one I've chosen to, or implement the features in a different way, you can easily do so. See the [`mc-server-wrapper-lib` README](mc-server-wrapper-lib/README.md) for more.
