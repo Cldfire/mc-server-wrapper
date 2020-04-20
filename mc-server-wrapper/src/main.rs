@@ -1,28 +1,28 @@
-use std::path::PathBuf;
 use std::env;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use tokio::io::BufReader;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 use tokio::stream::StreamExt;
-use tokio::io::BufReader;
 
 use twilight::{
     gateway::{shard::Event, Cluster, ClusterConfig},
     http::Client as DiscordClient,
     model::channel::message::MessageType,
-    model::id::ChannelId
+    model::id::ChannelId,
 };
 
-use minecraft_chat::{MessageBuilder, Payload, Color};
-use mc_server_wrapper_lib::{McServer, McServerConfig};
-use mc_server_wrapper_lib::parse::*;
 use mc_server_wrapper_lib::communication::*;
+use mc_server_wrapper_lib::parse::*;
+use mc_server_wrapper_lib::{McServer, McServerConfig};
+use minecraft_chat::{Color, MessageBuilder, Payload};
 
-use indicatif::{ProgressBar, ProgressStyle};
-use dotenv::dotenv;
-use structopt::StructOpt;
 use crate::error::*;
+use dotenv::dotenv;
+use indicatif::{ProgressBar, ProgressStyle};
+use structopt::StructOpt;
 
 mod error;
 
@@ -50,48 +50,55 @@ pub struct Opt {
 
     /// Amount of memory in megabytes to allocate for the server
     #[structopt(short = "m", long = "memory", default_value = "1024")]
-    memory: u16
+    memory: u16,
 }
 
 async fn handle_discord_event(
     event: (u64, Event),
     _discord_client: DiscordClient,
-    bridge_channel_id: ChannelId
+    bridge_channel_id: ChannelId,
 ) -> Result<Option<ServerCommand>, Error> {
     match event {
         (_, Event::Ready(_)) => {
             println!("Discord bridge online");
             Ok(None)
-        },
+        }
         (_, Event::GuildCreate(guild)) => {
             println!("Connected to guild {}", guild.name);
             Ok(None)
-        },
+        }
         (_, Event::MessageCreate(msg)) => {
             // TODO: maybe some bot chatter should be allowed through?
             // TODO: error handling
-            if msg.kind == MessageType::Regular && !msg.author.bot &&
-                msg.channel_id == bridge_channel_id {
+            if msg.kind == MessageType::Regular
+                && !msg.author.bot
+                && msg.channel_id == bridge_channel_id
+            {
                 let tellraw_msg = MessageBuilder::builder(Payload::text("[D] "))
                     .bold(true)
                     .color(Color::LightPurple)
-                    .then(Payload::text(&("<".to_string() + &msg.author.name + "> " + &msg.content)))
+                    .then(Payload::text(
+                        &("<".to_string() + &msg.author.name + "> " + &msg.content),
+                    ))
                     .bold(false)
                     .color(Color::White)
                     .build();
 
                 // TODO: This will not add the message to the server logs
-                println!("{}", ConsoleMsg::new(
-                    ConsoleMsgType::Info,
-                    "[D] <".to_string() + &msg.author.name + "> " + &msg.content
-                ));
+                println!(
+                    "{}",
+                    ConsoleMsg::new(
+                        ConsoleMsgType::Info,
+                        "[D] <".to_string() + &msg.author.name + "> " + &msg.content
+                    )
+                );
 
                 Ok(Some(ServerCommand::TellRaw(tellraw_msg.to_json().unwrap())))
             } else {
                 Ok(None)
             }
-        },
-        _ => { Ok(None) }
+        }
+        _ => Ok(None),
     }
 }
 
@@ -101,7 +108,7 @@ async fn handle_discord_event(
 async fn send_discord_msg(
     discord_client: Option<DiscordClient>,
     channel_id: ChannelId,
-    text: String
+    text: String,
 ) -> Result<(), Error> {
     if let Some(discord_client) = discord_client {
         discord_client

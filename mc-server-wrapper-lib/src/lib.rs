@@ -1,23 +1,23 @@
-use tokio::prelude::*;
-use tokio::io::BufReader;
-use tokio::sync::mpsc;
-use tokio::stream::StreamExt;
-use tokio::process;
-use tokio::sync::Mutex;
 use tokio::fs::File;
+use tokio::io::BufReader;
+use tokio::prelude::*;
+use tokio::process;
+use tokio::stream::StreamExt;
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 
-use std::process::{Stdio, ExitStatus};
-use std::sync::Arc;
-use std::path::PathBuf;
 use std::io;
+use std::path::PathBuf;
+use std::process::{ExitStatus, Stdio};
+use std::sync::Arc;
 
 use crate::communication::*;
 use crate::parse::{ConsoleMsg, ConsoleMsgSpecific};
 
+pub mod communication;
+pub mod parse;
 #[cfg(test)]
 mod test;
-pub mod parse;
-pub mod communication;
 
 /// Configuration provided to setup an `McServer` instance.
 #[derive(Debug)]
@@ -25,7 +25,7 @@ pub struct McServerConfig {
     /// The path to the server jarfile
     pub server_path: PathBuf,
     /// The amount of memory in megabytes to allocate for the server
-    pub memory: u16
+    pub memory: u16,
 }
 
 /// Represents a single wrapped Minecraft server that may be running or stopped
@@ -34,7 +34,7 @@ pub struct McServer {
     /// Channel through which commands can be sent to the server
     pub cmd_sender: mpsc::Sender<ServerCommand>,
     /// Channel through which events are received from the server
-    pub event_receiver: mpsc::Receiver<ServerEvent>
+    pub event_receiver: mpsc::Receiver<ServerEvent>,
 }
 
 impl McServer {
@@ -49,7 +49,7 @@ impl McServer {
         let mc_server_internal = Arc::new(McServerInternal {
             config,
             event_sender,
-            mc_stdin: Arc::new(Mutex::new(None))
+            mc_stdin: Arc::new(Mutex::new(None)),
         });
 
         let mc_server_internal_clone = mc_server_internal.clone();
@@ -66,53 +66,64 @@ impl McServer {
                         let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
                         if let Some(mc_stdin) = &mut *mc_stdin {
                             // TODO: handle error?
-                            let _ = mc_stdin.write_all(
-                                ("tellraw @a ".to_string() + &json + "\n")
-                                .as_bytes()
-                            ).await;
+                            let _ = mc_stdin
+                                .write_all(("tellraw @a ".to_string() + &json + "\n").as_bytes())
+                                .await;
                         }
-                    },
+                    }
                     WriteCommandToStdin(text) => {
                         let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
                         if let Some(mc_stdin) = &mut *mc_stdin {
                             // TODO: handle error?
                             let _ = mc_stdin.write_all((text + "\n").as_bytes()).await;
                         }
-                    },
+                    }
                     WriteToStdin(text) => {
                         let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
                         if let Some(mc_stdin) = &mut *mc_stdin {
                             // TODO: handle error?
                             let _ = mc_stdin.write_all(text.as_bytes()).await;
                         }
-                    },
-                    
+                    }
+
                     AgreeToEula => {
                         tokio::spawn(async move {
-                            mc_server_internal.event_sender.clone().send(
-                                AgreeToEulaResult(mc_server_internal.agree_to_eula().await)
-                            ).await.unwrap();
+                            mc_server_internal
+                                .event_sender
+                                .clone()
+                                .send(AgreeToEulaResult(mc_server_internal.agree_to_eula().await))
+                                .await
+                                .unwrap();
                         });
-                    },   
+                    }
                     StartServer => {
                         // Make sure the server is not already running
                         {
                             let mc_stdin = mc_server_internal.mc_stdin.lock().await;
-                            if mc_stdin.is_some() { continue }
+                            if mc_stdin.is_some() {
+                                continue;
+                            }
                         }
 
                         // Spawn a task to drive the server process to completion
                         // and send an event when it exits
                         tokio::spawn(async move {
                             let ret = mc_server_internal.run_server().await;
-                            mc_server_internal.event_sender.clone().send(ServerStopped(ret.0, ret.1)).await.unwrap();
+                            mc_server_internal
+                                .event_sender
+                                .clone()
+                                .send(ServerStopped(ret.0, ret.1))
+                                .await
+                                .unwrap();
                         });
-                    },
+                    }
                     StopServer { forever } => {
                         let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
                         if let Some(mc_stdin) = &mut *mc_stdin {
                             // TODO: handle error?
-                            let _ = mc_stdin.write_all(("stop".to_string() + "\n").as_bytes()).await;
+                            let _ = mc_stdin
+                                .write_all(("stop".to_string() + "\n").as_bytes())
+                                .await;
                         }
 
                         if forever {
@@ -125,7 +136,7 @@ impl McServer {
 
         McServer {
             cmd_sender,
-            event_receiver
+            event_receiver,
         }
     }
 }
@@ -139,7 +150,7 @@ struct McServerInternal {
     /// Channel through which we send events
     event_sender: mpsc::Sender<ServerEvent>,
     /// Handle to the server's stdin if it's running
-    mc_stdin: Arc<Mutex<Option<process::ChildStdin>>>
+    mc_stdin: Arc<Mutex<Option<process::ChildStdin>>>,
 }
 
 impl McServerInternal {
@@ -166,22 +177,25 @@ impl McServerInternal {
                     self.config.memory,
                     self.config.memory,
                     file.to_str().unwrap()
-                )
-            ]).spawn().unwrap();
+                ),
+            ])
+            .spawn()
+            .unwrap();
 
         // Update the stored handle to the server's stdin
         {
             let mut mc_stdin = self.mc_stdin.lock().await;
-            if mc_stdin.is_some() { unreachable!() };
+            if mc_stdin.is_some() {
+                unreachable!()
+            };
             *mc_stdin = Some(process.stdin.take().unwrap());
         }
 
         let mut stdout = BufReader::new(process.stdout.take().unwrap()).lines();
         let mut stderr = BufReader::new(process.stderr.take().unwrap()).lines();
 
-        let status_handle = tokio::spawn(async {
-            process.await.expect("child process encountered an error")
-        });
+        let status_handle =
+            tokio::spawn(async { process.await.expect("child process encountered an error") });
 
         let event_sender_clone = self.event_sender.clone();
         let stderr_handle = tokio::spawn(async move {
@@ -213,7 +227,10 @@ impl McServerInternal {
                         shutdown_reason = Some(ShutdownReason::EulaNotAccepted);
                     }
 
-                    event_sender.send(ConsoleEvent(console_msg, specific_msg)).await.unwrap();
+                    event_sender
+                        .send(ConsoleEvent(console_msg, specific_msg))
+                        .await
+                        .unwrap();
                 } else {
                     // spigot servers print lines that reach this branch ("\n",
                     // "Loading libraries, please wait...")
@@ -224,16 +241,14 @@ impl McServerInternal {
             shutdown_reason
         });
 
-        let (status, stdout_val, _) = tokio::join!(
-            status_handle,
-            stdout_handle,
-            stderr_handle,
-        );
+        let (status, stdout_val, _) = tokio::join!(status_handle, stdout_handle, stderr_handle,);
 
         // Update the stored handle to the server's stdin
         {
             let mut mc_stdin = self.mc_stdin.lock().await;
-            if mc_stdin.is_none() { unreachable!() };
+            if mc_stdin.is_none() {
+                unreachable!()
+            };
             *mc_stdin = None;
         }
 
@@ -242,9 +257,8 @@ impl McServerInternal {
 
     /// Overwrites the `eula.txt` file with the contents `eula=true`.
     async fn agree_to_eula(&self) -> io::Result<()> {
-        let mut file = File::create(
-            self.config.server_path.parent().unwrap().join("eula.txt")
-        ).await?;
+        let mut file =
+            File::create(self.config.server_path.parent().unwrap().join("eula.txt")).await?;
 
         file.write_all(b"eula=true").await
     }

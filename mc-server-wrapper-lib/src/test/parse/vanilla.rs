@@ -1,7 +1,7 @@
 //! Tests for parsing vanilla console output
 
-use crate::parse::{ConsoleMsgSpecific, ConsoleMsg};
 use crate::parse::ConsoleMsgType;
+use crate::parse::{ConsoleMsg, ConsoleMsgSpecific};
 use chrono::Timelike;
 
 #[test]
@@ -15,8 +15,11 @@ fn warn_msg() {
     assert_eq!(console_msg.timestamp.second(), 30);
     assert_eq!(console_msg.thread_name, "main");
     assert_eq!(console_msg.msg_type, ConsoleMsgType::Warn);
-    assert_eq!(console_msg.msg, "Ambiguity between arguments [teleport, targets, location] \
-        and [teleport, targets, destination] with inputs: [0.1 -0.5 .9, 0 0 0]");
+    assert_eq!(
+        console_msg.msg,
+        "Ambiguity between arguments [teleport, targets, location] \
+        and [teleport, targets, destination] with inputs: [0.1 -0.5 .9, 0 0 0]"
+    );
 
     assert!(ConsoleMsgSpecific::try_parse_from(&console_msg).is_none());
 }
@@ -55,9 +58,8 @@ fn blank_here() {
 fn must_accept_eula() {
     let msg = "[00:03:56] [Server thread/INFO]: You need to agree to the EULA in order to run the \
         server. Go to eula.txt for more info.";
-    let specific_msg = ConsoleMsgSpecific::try_parse_from(
-        &ConsoleMsg::try_parse_from(msg).unwrap()
-    ).unwrap();
+    let specific_msg =
+        ConsoleMsgSpecific::try_parse_from(&ConsoleMsg::try_parse_from(msg).unwrap()).unwrap();
 
     assert_eq!(specific_msg, ConsoleMsgSpecific::MustAcceptEula);
 }
@@ -65,16 +67,15 @@ fn must_accept_eula() {
 #[test]
 fn player_msg() {
     let msg = "[23:12:39] [Server thread/INFO]: <Cldfire> hi!";
-    let specific_msg = ConsoleMsgSpecific::try_parse_from(
-        &ConsoleMsg::try_parse_from(msg).unwrap()
-    ).unwrap();
+    let specific_msg =
+        ConsoleMsgSpecific::try_parse_from(&ConsoleMsg::try_parse_from(msg).unwrap()).unwrap();
 
     match specific_msg {
         ConsoleMsgSpecific::PlayerMsg { name, msg } => {
             assert_eq!(name, "Cldfire");
             assert_eq!(msg, "hi!");
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
@@ -82,19 +83,24 @@ fn player_msg() {
 fn player_login() {
     let msg = "[23:11:12] [Server thread/INFO]: Cldfire[/127.0.0.1:56538] logged in with entity \
         id 121 at (-2.5, 63.0, 256.5)";
-    let specific_msg = ConsoleMsgSpecific::try_parse_from(
-        &ConsoleMsg::try_parse_from(msg).unwrap()
-    ).unwrap();
+    let specific_msg =
+        ConsoleMsgSpecific::try_parse_from(&ConsoleMsg::try_parse_from(msg).unwrap()).unwrap();
 
     match specific_msg {
-        ConsoleMsgSpecific::PlayerLogin { name, ip, entity_id, coords, world } => {
+        ConsoleMsgSpecific::PlayerLogin {
+            name,
+            ip,
+            entity_id,
+            coords,
+            world,
+        } => {
             assert_eq!(name, "Cldfire");
             assert_eq!(ip, "127.0.0.1:56538");
             assert_eq!(entity_id, 121);
             assert_eq!(coords, (-2.5, 63.0, 256.5));
             assert!(world.is_none());
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
@@ -102,76 +108,71 @@ fn player_login() {
 fn player_auth() {
     let msg = "[23:11:12] [User Authenticator #1/INFO]: UUID of player Cldfire is \
         361e5fb3-dbce-4f91-86b2-43423a4888d5";
-    let specific_msg = ConsoleMsgSpecific::try_parse_from(
-        &ConsoleMsg::try_parse_from(msg).unwrap()
-    ).unwrap();
+    let specific_msg =
+        ConsoleMsgSpecific::try_parse_from(&ConsoleMsg::try_parse_from(msg).unwrap()).unwrap();
 
     match specific_msg {
         ConsoleMsgSpecific::PlayerAuth { name, uuid } => {
             assert_eq!(name, "Cldfire");
             assert_eq!(uuid, "361e5fb3-dbce-4f91-86b2-43423a4888d5");
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
 #[test]
 fn spawn_prepare_progress() {
     let msg = "[23:10:35] [Server thread/INFO]: Preparing spawn area: 44%";
-    let specific_msg = ConsoleMsgSpecific::try_parse_from(
-        &ConsoleMsg::try_parse_from(msg).unwrap()
-    ).unwrap();
+    let specific_msg =
+        ConsoleMsgSpecific::try_parse_from(&ConsoleMsg::try_parse_from(msg).unwrap()).unwrap();
 
     match specific_msg {
         ConsoleMsgSpecific::SpawnPrepareProgress { progress } => {
             assert_eq!(progress, 44);
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
 #[test]
 fn spawn_prepare_finished() {
     let msg = "[23:10:35] [Server thread/INFO]: Time elapsed: 3292 ms";
-    let specific_msg = ConsoleMsgSpecific::try_parse_from(
-        &ConsoleMsg::try_parse_from(msg).unwrap()
-    ).unwrap();
+    let specific_msg =
+        ConsoleMsgSpecific::try_parse_from(&ConsoleMsg::try_parse_from(msg).unwrap()).unwrap();
 
     match specific_msg {
         ConsoleMsgSpecific::SpawnPrepareFinish { time_elapsed_ms } => {
             assert_eq!(time_elapsed_ms, 3292);
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
 #[test]
 fn player_lost_connection() {
     let msg = "[19:10:21] [Server thread/INFO]: Cldfire lost connection: Disconnected";
-    let specific_msg = ConsoleMsgSpecific::try_parse_from(
-        &ConsoleMsg::try_parse_from(msg).unwrap()
-    ).unwrap();
+    let specific_msg =
+        ConsoleMsgSpecific::try_parse_from(&ConsoleMsg::try_parse_from(msg).unwrap()).unwrap();
 
     match specific_msg {
         ConsoleMsgSpecific::PlayerLostConnection { name, reason } => {
             assert_eq!(name, "Cldfire");
             assert_eq!(reason, "Disconnected");
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
 #[test]
 fn player_left_game() {
     let msg = "[19:10:21] [Server thread/INFO]: Cldfire left the game";
-    let specific_msg = ConsoleMsgSpecific::try_parse_from(
-        &ConsoleMsg::try_parse_from(msg).unwrap()
-    ).unwrap();
+    let specific_msg =
+        ConsoleMsgSpecific::try_parse_from(&ConsoleMsg::try_parse_from(msg).unwrap()).unwrap();
 
     match specific_msg {
         ConsoleMsgSpecific::PlayerLogout { name } => {
             assert_eq!(name, "Cldfire");
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }

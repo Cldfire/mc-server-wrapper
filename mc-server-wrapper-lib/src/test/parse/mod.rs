@@ -1,2 +1,2 @@
-mod vanilla;
 mod spigot;
+mod vanilla;

@@ -1,7 +1,7 @@
 use crate::parse::*;
 
-use std::process::ExitStatus;
 use std::io;
+use std::process::ExitStatus;
 
 /// Events from a Minecraft server.
 // TODO: derive serialize, deserialize
@@ -11,12 +11,12 @@ use std::io;
 #[derive(Debug)]
 pub enum ServerEvent {
     /// An event parsed from the server's console output (stderr or stdout)
-    /// 
+    ///
     /// You are given a `ConsoleMsg` representing a generic form of the console
     /// output. This can be directly printed to your program's stdout in order
     /// to replicate (with slightly nicer formatting) the Minecraft server's
     /// output.
-    /// 
+    ///
     /// You are also given an `Option<ConsoleMsgSpecific>`. Some `ConsoleMsg`s
     /// can be parsed into more specific representations, and in that case you
     /// will be given one. These are not for printing; they are useful for
@@ -32,7 +32,7 @@ pub enum ServerEvent {
     ServerStopped(ExitStatus, Option<ShutdownReason>),
 
     /// Response to `AgreeToEula`
-    AgreeToEulaResult(io::Result<()>)
+    AgreeToEulaResult(io::Result<()>),
 }
 
 /// Commands that can be sent over channels to be performed by the MC server.
@@ -58,13 +58,11 @@ pub enum ServerCommand {
     /// Start the Minecraft server (if it is stopped)
     StartServer,
     /// Stop the Minecraft server (if it is running)
-    /// 
+    ///
     /// Setting `forever` to true will cause the `McServer` instance to stop
     /// listening for commands and gracefully shutdown everything related to
     /// it.
-    StopServer {
-        forever: bool
-    }
+    StopServer { forever: bool },
 }
 
 /// Reasons that a Minecraft server stopped running
@@ -72,5 +70,5 @@ pub enum ServerCommand {
 #[derive(Debug)]
 pub enum ShutdownReason {
     /// The server stopped because the EULA has not been accepted
-    EulaNotAccepted
+    EulaNotAccepted,
 }
