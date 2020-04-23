@@ -7,6 +7,9 @@ Not production-ready, but getting there. Feel free to use it for non-critical se
 ## Features
 
 * Optionally enabled bi-directional Discord chat bridge (see [Discord Bridge Setup](#discord-bridge-setup))
+    * Commands (prefixed by `!mc`):
+        * `list`: replies with a list of people playing Minecraft
+    * Server topic displays list of online players
 * Run server with configurable memory allocation
 * Restart server on crash
 * Auto-agree to EULA

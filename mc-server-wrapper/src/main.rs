@@ -2,13 +2,14 @@ use std::env;
 use std::path::PathBuf;
 use std::{
     collections::HashSet,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use tokio::io::BufReader;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
-use tokio::stream::StreamExt;
+use tokio::{stream::StreamExt, sync::Mutex};
 
 use twilight::model::id::ChannelId;
 
@@ -16,7 +17,7 @@ use mc_server_wrapper_lib::communication::*;
 use mc_server_wrapper_lib::parse::*;
 use mc_server_wrapper_lib::{McServer, McServerConfig};
 
-use crate::discord::util::format_online_players_topic;
+use crate::discord::util::format_online_players;
 use crate::discord::*;
 use crate::error::*;
 use dotenv::dotenv;
@@ -66,6 +67,7 @@ fn main() -> Result<(), Error> {
             memory: opt.memory
         };
         let mut mc_server = McServer::new(mc_config);
+        let online_players = Arc::new(Mutex::new(HashSet::new()));
 
         let discord_channel_id = opt.discord_channel_id.take()
             .unwrap_or_else(||
@@ -95,22 +97,33 @@ fn main() -> Result<(), Error> {
                 return ();
             }
 
-            discord = DiscordBridge::new(discord_token, ChannelId(discord_channel_id)).await.expect("Could not connect to Discord");
+            discord = DiscordBridge::new(discord_token, ChannelId(discord_channel_id))
+                .await
+                .expect("Could not connect to Discord");
             let cmd_sender_clone = mc_server.cmd_sender.clone();
             let discord_clone = discord.clone();
+            let online_players_clone = online_players.clone();
             tokio::spawn(async move {
                 let cmd_sender = cmd_sender_clone;
                 let discord = discord_clone;
+                let online_players = online_players_clone;
+                let cmd_parser = DiscordBridge::command_parser();
 
                 // For all received Discord events, map the event to a `ServerCommand`
                 // (if necessary) and send it to the Minecraft server
                 let mut events = discord.cluster().unwrap().events().await;
                 while let Some(e) = events.next().await {
                     let discord = discord.clone();
+                    let online_players = online_players.clone();
                     let mut cmd_sender_clone = cmd_sender.clone();
+                    let cmd_parser_clone = cmd_parser.clone();
 
                     tokio::spawn(async move {
-                        match discord.handle_discord_event(e).await {
+                        match discord.handle_discord_event(
+                            e,
+                            cmd_parser_clone,
+                            online_players
+                        ).await {
                             Ok(Some(cmd)) => {
                                 let _ = cmd_sender_clone.send(cmd).await;
                             },
@@ -133,8 +146,6 @@ fn main() -> Result<(), Error> {
             .template("{bar:30[>20]} {pos:>2}%")
         );
 
-        let mut online_players = HashSet::new();
-
         loop {
             tokio::select! {
                 e = mc_server.event_receiver.next() => if let Some(e) = e {
@@ -148,9 +159,10 @@ fn main() -> Result<(), Error> {
                                         "_**".to_string() + &name + "** left the game_"
                                     );
 
+                                    let mut online_players = online_players.lock().await;
                                     online_players.remove(&name);
                                     discord.clone().set_channel_topic(
-                                        format_online_players_topic(&online_players)
+                                        format_online_players(&online_players, true)
                                     );
                                 },
                                 ConsoleMsgSpecific::PlayerLogin { name, .. } => {
@@ -158,9 +170,10 @@ fn main() -> Result<(), Error> {
                                         "_**".to_string() + &name + "** joined the game_"
                                     );
 
+                                    let mut online_players = online_players.lock().await;
                                     online_players.insert(name);
                                     discord.clone().set_channel_topic(
-                                        format_online_players_topic(&online_players)
+                                        format_online_players(&online_players, true)
                                     );
                                 },
                                 ConsoleMsgSpecific::PlayerMsg { name, msg } => {

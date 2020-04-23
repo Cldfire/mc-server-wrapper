@@ -1,4 +1,7 @@
+use std::{collections::HashSet, sync::Arc};
+
 use twilight::{
+    command_parser::{Command, CommandParserConfig, Parser},
     gateway::shard::Event,
     gateway::{Cluster, ClusterConfig},
     http::Client as DiscordClient,
@@ -11,7 +14,10 @@ use mc_server_wrapper_lib::communication::*;
 use mc_server_wrapper_lib::parse::*;
 use minecraft_chat::{Color, MessageBuilder, Payload};
 
+use util::format_online_players;
+
 use crate::error::*;
+use tokio::sync::Mutex;
 
 pub mod util;
 
@@ -61,13 +67,30 @@ impl DiscordBridge {
         self.cluster.as_ref()
     }
 
+    /// Constructs a command parser for Discord commands
+    pub fn command_parser<'a>() -> Parser<'a> {
+        let mut config = CommandParserConfig::new();
+
+        config.command("list").add();
+
+        // TODO: make this configurable
+        config.add_prefix("!mc ");
+
+        Parser::new(config)
+    }
+
     /// Handle an event from Discord
     ///
     /// The event can optionally be mapped to a command to be sent to a Minecraft
     /// server.
-    pub async fn handle_discord_event(
+    ///
+    /// The provided `cmd_parser` is used to parse commands (not `ServerCommands`)
+    /// from Discord messages.
+    pub async fn handle_discord_event<'a>(
         &self,
         event: (u64, Event),
+        cmd_parser: Parser<'a>,
+        online_players: Arc<Mutex<HashSet<String>>>,
     ) -> Result<Option<ServerCommand>, Error> {
         match event {
             (_, Event::Ready(_)) => {
@@ -85,6 +108,22 @@ impl DiscordBridge {
                     && !msg.author.bot
                     && msg.channel_id == self.bridge_channel_id
                 {
+                    if let Some(command) = cmd_parser.parse(&msg.content) {
+                        match command {
+                            Command { name: "list", .. } => {
+                                let response = {
+                                    let online_players = online_players.lock().await;
+                                    format_online_players(&online_players, false)
+                                };
+
+                                self.clone().send_channel_msg(response);
+                            }
+                            _ => {}
+                        }
+
+                        return Ok(None);
+                    }
+
                     let tellraw_msg = MessageBuilder::builder(Payload::text("[D] "))
                         .bold(true)
                         .color(Color::LightPurple)
