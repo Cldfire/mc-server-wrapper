@@ -13,6 +13,7 @@ use tokio::stream::StreamExt;
 use twilight::{
     gateway::{Cluster, ClusterConfig},
     http::Client as DiscordClient,
+    model::gateway::GatewayIntents,
     model::id::ChannelId,
 };
 
@@ -99,7 +100,10 @@ fn main() -> Result<(), Error> {
             }
 
             let discord_client_temp = DiscordClient::new(&discord_token);
-            let cluster_config = ClusterConfig::builder(&discord_token).build();
+            let cluster_config = ClusterConfig::builder(&discord_token)
+                // We only care about guild message events
+                .intents(Some(GatewayIntents::GUILD_MESSAGES))
+                .build();
             let discord_cluster = Cluster::new(cluster_config);
             discord_cluster.up().await.expect("Could not connect to Discord");
             let cmd_sender_clone = mc_server.cmd_sender.clone();
