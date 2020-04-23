@@ -10,17 +10,13 @@ use tokio::prelude::*;
 use tokio::runtime::Runtime;
 use tokio::stream::StreamExt;
 
-use twilight::{
-    gateway::{Cluster, ClusterConfig},
-    http::Client as DiscordClient,
-    model::gateway::GatewayIntents,
-    model::id::ChannelId,
-};
+use twilight::model::id::ChannelId;
 
 use mc_server_wrapper_lib::communication::*;
 use mc_server_wrapper_lib::parse::*;
 use mc_server_wrapper_lib::{McServer, McServerConfig};
 
+use crate::discord::util::format_online_players_topic;
 use crate::discord::*;
 use crate::error::*;
 use dotenv::dotenv;
@@ -80,7 +76,7 @@ fn main() -> Result<(), Error> {
                 env::var("DISCORD_TOKEN").unwrap_or_else(|_| String::new())
             );
 
-        let discord_client;
+        let discord;
         // Set up discord bridge if enabled
         if opt.bridge_to_discord {
             if discord_channel_id == 0 {
@@ -99,35 +95,22 @@ fn main() -> Result<(), Error> {
                 return ();
             }
 
-            let discord_client_temp = DiscordClient::new(&discord_token);
-            let cluster_config = ClusterConfig::builder(&discord_token)
-                // We only care about guild message events
-                .intents(Some(GatewayIntents::GUILD_MESSAGES))
-                .build();
-            let discord_cluster = Cluster::new(cluster_config);
-            discord_cluster.up().await.expect("Could not connect to Discord");
+            discord = DiscordBridge::new(discord_token, ChannelId(discord_channel_id)).await.expect("Could not connect to Discord");
             let cmd_sender_clone = mc_server.cmd_sender.clone();
-
-            let discord_client_clone = discord_client_temp.clone();
-            let discord_cluster_clone = discord_cluster.clone();
+            let discord_clone = discord.clone();
             tokio::spawn(async move {
-                let discord_client = discord_client_clone;
-                let discord_cluster = discord_cluster_clone;
                 let cmd_sender = cmd_sender_clone;
+                let discord = discord_clone;
 
                 // For all received Discord events, map the event to a `ServerCommand`
                 // (if necessary) and send it to the Minecraft server
-                let mut events = discord_cluster.events().await;
+                let mut events = discord.cluster().unwrap().events().await;
                 while let Some(e) = events.next().await {
-                    let client_clone = discord_client.clone();
+                    let discord = discord.clone();
                     let mut cmd_sender_clone = cmd_sender.clone();
 
                     tokio::spawn(async move {
-                        match handle_discord_event(
-                            e,
-                            client_clone,
-                            ChannelId(discord_channel_id)
-                        ).await {
+                        match discord.handle_discord_event(e).await {
                             Ok(Some(cmd)) => {
                                 let _ = cmd_sender_clone.send(cmd).await;
                             },
@@ -137,10 +120,8 @@ fn main() -> Result<(), Error> {
                     });
                 }
             });
-
-            discord_client = Some(discord_client_temp);
         } else {
-            discord_client = None;
+            discord = DiscordBridge::new_noop();
         }
 
         mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
@@ -163,40 +144,29 @@ fn main() -> Result<(), Error> {
 
                             match specific_msg {
                                 ConsoleMsgSpecific::PlayerLogout { name } => {
-                                    let _ = tokio::spawn(send_channel_msg(
-                                        discord_client.clone(),
-                                        ChannelId(discord_channel_id),
+                                    discord.clone().send_channel_msg(
                                         "_**".to_string() + &name + "** left the game_"
-                                    )).await;
+                                    );
 
                                     online_players.remove(&name);
-                                    let _ = tokio::spawn(set_channel_topic(
-                                        discord_client.clone(),
-                                        ChannelId(discord_channel_id),
+                                    discord.clone().set_channel_topic(
                                         format_online_players_topic(&online_players)
-                                    )).await;
+                                    );
                                 },
                                 ConsoleMsgSpecific::PlayerLogin { name, .. } => {
-                                    // TODO: error handling strategy?
-                                    let _ = tokio::spawn(send_channel_msg(
-                                        discord_client.clone(),
-                                        ChannelId(discord_channel_id),
+                                    discord.clone().send_channel_msg(
                                         "_**".to_string() + &name + "** joined the game_"
-                                    )).await;
+                                    );
 
                                     online_players.insert(name);
-                                    let _ = tokio::spawn(set_channel_topic(
-                                        discord_client.clone(),
-                                        ChannelId(discord_channel_id),
+                                    discord.clone().set_channel_topic(
                                         format_online_players_topic(&online_players)
-                                    )).await;
+                                    );
                                 },
                                 ConsoleMsgSpecific::PlayerMsg { name, msg } => {
-                                    let _ = tokio::spawn(send_channel_msg(
-                                        discord_client.clone(),
-                                        ChannelId(discord_channel_id),
+                                    discord.clone().send_channel_msg(
                                         "**".to_string() + &name + "**  " + &msg
-                                    )).await;
+                                    );
                                 },
                                 ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
                                     progress_bar.set_position(progress as u64);
@@ -278,11 +248,7 @@ fn main() -> Result<(), Error> {
             }
         }
 
-        let _ = set_channel_topic(
-            discord_client.clone(),
-            ChannelId(discord_channel_id),
-            "Minecraft server is offline".into()
-        ).await;
+        discord.clone().set_channel_topic("Minecraft server is offline");
     });
 
     // TODO: we need this because the way tokio handles stdin involves blocking
