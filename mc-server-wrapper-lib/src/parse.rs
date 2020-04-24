@@ -1,5 +1,6 @@
 use chrono::offset::Local;
 use chrono::NaiveTime;
+use fmt::Display;
 use std::fmt;
 
 /// More informative representations for specific, supported console messages.
@@ -170,7 +171,7 @@ impl fmt::Display for ConsoleMsg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "[{}] [mc, {:?}]: {}",
+            "[{}] [mc, {}]: {}",
             self.timestamp.format("%-I:%M:%S %p").to_string(),
             self.msg_type,
             self.msg
@@ -230,6 +231,19 @@ impl ConsoleMsgType {
             "WARN" => ConsoleMsgType::Warn,
             "ERROR" => ConsoleMsgType::Error,
             _ => ConsoleMsgType::Unknown,
+        }
+    }
+}
+
+impl Display for ConsoleMsgType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use ConsoleMsgType::*;
+
+        match *self {
+            Info => f.write_str("INFO"),
+            Warn => f.write_str("WARN"),
+            Error => f.write_str("ERROR"),
+            Unknown => f.write_str("?"),
         }
     }
 }

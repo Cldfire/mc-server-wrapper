@@ -26,6 +26,8 @@ pub struct McServerConfig {
     pub server_path: PathBuf,
     /// The amount of memory in megabytes to allocate for the server
     pub memory: u16,
+    /// Custom flags to pass to the JVM
+    pub jvm_flags: Option<String>,
 }
 
 /// Represents a single wrapped Minecraft server that may be running or stopped
@@ -171,10 +173,15 @@ impl McServerInternal {
             .args(&[
                 "-c",
                 &format!(
-                    "cd {} && exec java -Xms{}M -Xmx{}M -jar {} nogui",
+                    "cd {} && exec java -Xms{}M -Xmx{}M {} -jar {} nogui",
                     folder.to_str().unwrap(),
                     self.config.memory,
                     self.config.memory,
+                    self.config
+                        .jvm_flags
+                        .as_ref()
+                        .map(|s| s.as_str())
+                        .unwrap_or(""),
                     file.to_str().unwrap()
                 ),
             ])

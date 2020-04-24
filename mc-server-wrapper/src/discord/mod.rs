@@ -104,8 +104,6 @@ impl DiscordBridge {
                 Ok(None)
             }
             (_, Event::MessageCreate(msg)) => {
-                // TODO: maybe some bot chatter should be allowed through?
-                // TODO: error handling
                 if msg.kind == MessageType::Regular
                     && !msg.author.bot
                     && msg.channel_id == self.bridge_channel_id

@@ -1,5 +1,4 @@
-use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::{
     collections::HashSet,
     sync::Arc,
@@ -24,78 +23,59 @@ use crate::discord::*;
 use crate::error::*;
 use dotenv::dotenv;
 use indicatif::{ProgressBar, ProgressStyle};
+use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 mod discord;
 mod error;
+mod logging;
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "mc-wrapper")]
+#[structopt(settings(&[AppSettings::ColoredHelp]))]
 pub struct Opt {
-    /// Path to the server jar to execute
+    /// Path to the Minecraft server jar
     #[structopt(parse(from_os_str))]
     server_path: PathBuf,
 
     /// Discord bot token (for Discord chat bridge)
-    // Note that we cannot set this flag using structopt's env feature because
-    // it prints the value if it's set when you view help output, and we
-    // of course don't want that for private tokens
-    #[structopt(long)]
+    #[structopt(long, env, hide_env_values = true)]
     discord_token: Option<String>,
 
     /// Discord channel ID (for Discord chat bridge)
-    #[structopt(long)]
+    #[structopt(long, env)]
     discord_channel_id: Option<u64>,
 
     /// Bridge server chat to discord
-    #[structopt(short, long)]
+    #[structopt(short = "b", long)]
     bridge_to_discord: bool,
 
     /// Amount of memory in megabytes to allocate for the server
-    #[structopt(short = "m", long = "memory", default_value = "1024")]
+    #[structopt(short = "m", long, default_value = "1024")]
     memory: u16,
-}
 
-// TODO: make logging more configurable
-fn setup_logger<P: AsRef<Path>>(logfile_path: P) -> Result<(), fern::InitError> {
-    let file_logger = fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "{}[{}][{}] {}",
-                chrono::Local::now().format("[%m-%d-%Y][%-I:%M:%S %p]"),
-                record.target(),
-                record.level(),
-                message
-            ))
-        })
-        .level(log::LevelFilter::Warn)
-        .level_for("twilight_http", log::LevelFilter::Info)
-        .level_for("twilight_gateway", log::LevelFilter::Info)
-        .level_for("mc_server_wrapper", log::LevelFilter::Debug)
-        .chain(fern::log_file(logfile_path)?);
+    /// Logging level for mc-server-wrapper dependencies [error, warn, info,
+    /// debug, trace]
+    ///
+    /// This only affects file logging.
+    #[structopt(long, env, default_value = "warn")]
+    log_level_all: log::Level,
 
-    let stdout_logger = fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "[{}] [{}, {}]: {}",
-                chrono::Local::now().format("%-I:%M:%S %p"),
-                record.target(),
-                record.level(),
-                message
-            ))
-        })
-        .level(log::LevelFilter::Error)
-        .level_for("twilight_http", log::LevelFilter::Warn)
-        .level_for("twilight_gateway", log::LevelFilter::Warn)
-        .level_for("mc_server_wrapper", log::LevelFilter::Info)
-        .chain(std::io::stdout());
+    /// Logging level for mc-server-wrapper [error, warn, info, debug, trace]
+    ///
+    /// This overrides --log-level-all and only affects file logging.
+    #[structopt(long, env, default_value = "debug")]
+    log_level_self: log::Level,
 
-    fern::Dispatch::new()
-        .chain(stdout_logger)
-        .chain(file_logger)
-        .apply()?;
+    /// Logging level for Discord-related dependencies [error, warn, info, debug,
+    /// trace]
+    ///
+    /// This overrides --log-level-all and only affects file logging.
+    #[structopt(long, env, default_value = "info")]
+    log_level_discord: log::Level,
 
-    Ok(())
+    /// Custom flags to pass to the JVM
+    #[structopt(env, raw(true))]
+    jvm_flags: Option<String>,
 }
 
 fn main() -> Result<(), Error> {
@@ -104,53 +84,43 @@ fn main() -> Result<(), Error> {
     // TODO: use proc macro instead if shutdown_timeout no longer needed
     rt.block_on(async {
         dotenv().ok();
-        let mut opt = Opt::from_args();
-        let logfile_name = "mc-server-wrapper.log";
-        let logfile_path = if let Some(path) = opt.server_path.parent() {
-            path.join(logfile_name)
-        } else {
-            PathBuf::from(logfile_name)
-        };
-        setup_logger(logfile_path).unwrap();
+        let opt = Opt::from_args();
+
+        logging::setup_logger(
+            opt.server_path.with_file_name("mc-server-wrapper.log"),
+            opt.log_level_all,
+            opt.log_level_self,
+            opt.log_level_discord
+        ).unwrap();
 
         let mc_config = McServerConfig {
             server_path: opt.server_path.clone(),
-            memory: opt.memory
+            memory: opt.memory,
+            jvm_flags: opt.jvm_flags,
         };
         let mut mc_server = McServer::new(mc_config);
         let online_players = Arc::new(Mutex::new(HashSet::new()));
 
-        let discord_channel_id = opt.discord_channel_id.take()
-            .unwrap_or_else(||
-                env::var("DISCORD_CHANNEL_ID").unwrap_or_else(|_| "".into()).parse().unwrap_or(0)
-            );
-        let discord_token = opt.discord_token.take()
-            .unwrap_or_else(||
-                env::var("DISCORD_TOKEN").unwrap_or_else(|_| String::new())
-            );
-
         let discord;
         // Set up discord bridge if enabled
         if opt.bridge_to_discord {
-            if discord_channel_id == 0 {
+            if opt.discord_channel_id.is_none() {
                 error!("Discord bridge was enabled but a channel ID to bridge to \
-                        was not provided. Either set the environment variable \
-                        `DISCORD_CHANNEL_ID` or provide it via the command line \
-                        with the `--discord-channel-id` option");
+                        was not provided.");
                 return;
             }
 
-            if discord_token == "" {
+            if opt.discord_token.is_none() {
                 error!("Discord bridge was enabled but an API token for a Discord \
-                        bot was not provided. Either set the environment variable \
-                        `DISCORD_TOKEN` or provide it via the command line with the \
-                        `--discord-token` option");
+                        bot was not provided.");
                 return;
             }
 
-            discord = DiscordBridge::new(discord_token, ChannelId(discord_channel_id))
-                .await
-                .expect("Could not connect to Discord");
+            discord = DiscordBridge::new(
+                opt.discord_token.unwrap(),
+                ChannelId(opt.discord_channel_id.unwrap())
+            ).await.expect("Could not connect to Discord");
+
             let cmd_sender_clone = mc_server.cmd_sender.clone();
             let discord_clone = discord.clone();
             let online_players_clone = online_players.clone();
