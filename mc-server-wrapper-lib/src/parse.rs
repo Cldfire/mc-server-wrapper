@@ -170,7 +170,7 @@ impl fmt::Display for ConsoleMsg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "[{}] [{:?}]: {}",
+            "[{}] [mc, {:?}]: {}",
             self.timestamp.format("%-I:%M:%S %p").to_string(),
             self.msg_type,
             self.msg

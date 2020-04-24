@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{
     collections::HashSet,
     sync::Arc,
@@ -16,6 +16,8 @@ use twilight::model::id::ChannelId;
 use mc_server_wrapper_lib::communication::*;
 use mc_server_wrapper_lib::parse::*;
 use mc_server_wrapper_lib::{McServer, McServerConfig};
+
+use log::{error, warn};
 
 use crate::discord::util::{format_online_players, sanitize_for_markdown};
 use crate::discord::*;
@@ -54,6 +56,48 @@ pub struct Opt {
     memory: u16,
 }
 
+// TODO: make logging more configurable
+fn setup_logger<P: AsRef<Path>>(logfile_path: P) -> Result<(), fern::InitError> {
+    let file_logger = fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%m-%d-%Y][%-I:%M:%S %p]"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Warn)
+        .level_for("twilight_http", log::LevelFilter::Info)
+        .level_for("twilight_gateway", log::LevelFilter::Info)
+        .level_for("mc_server_wrapper", log::LevelFilter::Debug)
+        .chain(fern::log_file(logfile_path)?);
+
+    let stdout_logger = fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{}] [{}, {}]: {}",
+                chrono::Local::now().format("%-I:%M:%S %p"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Error)
+        .level_for("twilight_http", log::LevelFilter::Warn)
+        .level_for("twilight_gateway", log::LevelFilter::Warn)
+        .level_for("mc_server_wrapper", log::LevelFilter::Info)
+        .chain(std::io::stdout());
+
+    fern::Dispatch::new()
+        .chain(stdout_logger)
+        .chain(file_logger)
+        .apply()?;
+
+    Ok(())
+}
+
 fn main() -> Result<(), Error> {
     let mut rt = Runtime::new().unwrap();
 
@@ -61,6 +105,13 @@ fn main() -> Result<(), Error> {
     rt.block_on(async {
         dotenv().ok();
         let mut opt = Opt::from_args();
+        let logfile_name = "mc-server-wrapper.log";
+        let logfile_path = if let Some(path) = opt.server_path.parent() {
+            path.join(logfile_name)
+        } else {
+            PathBuf::from(logfile_name)
+        };
+        setup_logger(logfile_path).unwrap();
 
         let mc_config = McServerConfig {
             server_path: opt.server_path.clone(),
@@ -82,7 +133,7 @@ fn main() -> Result<(), Error> {
         // Set up discord bridge if enabled
         if opt.bridge_to_discord {
             if discord_channel_id == 0 {
-                println!("Discord bridge was enabled but a channel ID to bridge to \
+                error!("Discord bridge was enabled but a channel ID to bridge to \
                         was not provided. Either set the environment variable \
                         `DISCORD_CHANNEL_ID` or provide it via the command line \
                         with the `--discord-channel-id` option");
@@ -90,7 +141,7 @@ fn main() -> Result<(), Error> {
             }
 
             if discord_token == "" {
-                println!("Discord bridge was enabled but an API token for a Discord \
+                error!("Discord bridge was enabled but an API token for a Discord \
                         bot was not provided. Either set the environment variable \
                         `DISCORD_TOKEN` or provide it via the command line with the \
                         `--discord-token` option");
@@ -125,9 +176,9 @@ fn main() -> Result<(), Error> {
                             online_players
                         ).await {
                             Ok(Some(cmd)) => {
-                                let _ = cmd_sender_clone.send(cmd).await;
+                                cmd_sender_clone.send(cmd).await.ok();
                             },
-                            // TODO: error handling
+                            Err(e) => warn!("Failed to handle Discord event: {:?}", e),
                             _ => {}
                         }
                     });
@@ -265,7 +316,8 @@ fn main() -> Result<(), Error> {
             }
         }
 
-        discord.clone().set_channel_topic("Minecraft server is offline");
+        // TODO: need to await completion of this, otherwise it panics
+        // discord.clone().set_channel_topic("Minecraft server is offline");
     });
 
     // TODO: we need this because the way tokio handles stdin involves blocking

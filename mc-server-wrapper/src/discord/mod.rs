@@ -1,3 +1,4 @@
+use log::{info, warn};
 use std::{collections::HashSet, sync::Arc};
 
 use twilight::{
@@ -40,8 +41,9 @@ impl DiscordBridge {
     pub async fn new(token: String, bridge_channel_id: ChannelId) -> Result<Self, Error> {
         let client = DiscordClient::new(&token);
         let cluster_config = ClusterConfig::builder(&token)
-            // We only care about guild message events
-            .intents(Some(GatewayIntents::GUILD_MESSAGES))
+            .intents(Some(
+                GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILDS,
+            ))
             .build();
         let cluster = Cluster::new(cluster_config);
         cluster.up().await?;
@@ -94,11 +96,11 @@ impl DiscordBridge {
     ) -> Result<Option<ServerCommand>, Error> {
         match event {
             (_, Event::Ready(_)) => {
-                println!("Discord bridge online");
+                info!("Discord bridge online");
                 Ok(None)
             }
             (_, Event::GuildCreate(guild)) => {
-                println!("Connected to guild {}", guild.name);
+                info!("Connected to guild {}", guild.name);
                 Ok(None)
             }
             (_, Event::MessageCreate(msg)) => {
@@ -159,11 +161,13 @@ impl DiscordBridge {
     pub fn send_channel_msg<T: Into<String> + Send + 'static>(self, text: T) {
         tokio::spawn(async move {
             if let Some(client) = self.client {
-                // TODO: log errors
-                let _ = client
+                if let Err(e) = client
                     .create_message(self.bridge_channel_id)
                     .content(text)
-                    .await;
+                    .await
+                {
+                    warn!("Failed to send Discord message: {}", e);
+                }
             }
         });
     }
@@ -175,11 +179,13 @@ impl DiscordBridge {
     pub fn set_channel_topic<T: Into<String> + Send + 'static>(self, text: T) {
         tokio::spawn(async move {
             if let Some(client) = self.client {
-                // TODO: log errors
-                let _ = client
+                if let Err(e) = client
                     .update_channel(self.bridge_channel_id)
                     .topic(text)
-                    .await;
+                    .await
+                {
+                    warn!("Failed to set Discord channel topic: {}", e);
+                }
             }
         });
     }
