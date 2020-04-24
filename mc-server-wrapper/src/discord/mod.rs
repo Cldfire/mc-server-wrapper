@@ -1,5 +1,4 @@
 use log::{info, warn};
-use std::{collections::HashSet, sync::Arc};
 
 use twilight::{
     command_parser::{Command, CommandParserConfig, Parser},
@@ -18,9 +17,46 @@ use minecraft_chat::{Color, MessageBuilder, Payload};
 use util::format_online_players;
 
 use crate::error::*;
-use tokio::sync::Mutex;
+use crate::ONLINE_PLAYERS;
+use tokio::{stream::StreamExt, sync::mpsc::Sender};
 
 pub mod util;
+
+/// Sets up a `DiscordBridge` and starts handling events
+pub async fn setup_discord(
+    token: String,
+    bridge_channel_id: ChannelId,
+    mc_cmd_sender: Sender<ServerCommand>,
+) -> Result<DiscordBridge, Error> {
+    let discord = DiscordBridge::new(token, bridge_channel_id).await?;
+
+    let discord_clone = discord.clone();
+    tokio::spawn(async move {
+        let discord = discord_clone;
+        let cmd_parser = DiscordBridge::command_parser();
+
+        // For all received Discord events, map the event to a `ServerCommand`
+        // (if necessary) and send it to the Minecraft server
+        let mut events = discord.cluster().unwrap().events().await;
+        while let Some(e) = events.next().await {
+            let discord = discord.clone();
+            let mut cmd_sender_clone = mc_cmd_sender.clone();
+            let cmd_parser_clone = cmd_parser.clone();
+
+            tokio::spawn(async move {
+                match discord.handle_discord_event(e, cmd_parser_clone).await {
+                    Ok(Some(cmd)) => {
+                        cmd_sender_clone.send(cmd).await.ok();
+                    }
+                    Err(e) => warn!("Failed to handle Discord event: {:?}", e),
+                    _ => {}
+                }
+            });
+        }
+    });
+
+    Ok(discord)
+}
 
 /// Represents a maybe-present Discord bridge to a single text channel
 ///
@@ -37,7 +73,7 @@ pub struct DiscordBridge {
 }
 
 impl DiscordBridge {
-    /// Sets up a bridge to Discord with the given `token` and `bridge_channel_id`
+    /// Connects to Discord with the given `token` and `bridge_channel_id`
     pub async fn new(token: String, bridge_channel_id: ChannelId) -> Result<Self, Error> {
         let client = DiscordClient::new(&token);
         let cluster_config = ClusterConfig::builder(&token)
@@ -92,7 +128,6 @@ impl DiscordBridge {
         &self,
         event: (u64, Event),
         cmd_parser: Parser<'a>,
-        online_players: Arc<Mutex<HashSet<String>>>,
     ) -> Result<Option<ServerCommand>, Error> {
         match event {
             (_, Event::Ready(_)) => {
@@ -112,7 +147,7 @@ impl DiscordBridge {
                         match command {
                             Command { name: "list", .. } => {
                                 let response = {
-                                    let online_players = online_players.lock().await;
+                                    let online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
                                     format_online_players(&online_players, false)
                                 };
 

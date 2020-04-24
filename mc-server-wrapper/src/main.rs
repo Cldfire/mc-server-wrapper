@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::{
     collections::HashSet,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -10,13 +9,15 @@ use tokio::prelude::*;
 use tokio::runtime::Runtime;
 use tokio::{stream::StreamExt, sync::Mutex};
 
+use once_cell::sync::OnceCell;
+
 use twilight::model::id::ChannelId;
 
 use mc_server_wrapper_lib::communication::*;
 use mc_server_wrapper_lib::parse::*;
 use mc_server_wrapper_lib::{McServer, McServerConfig};
 
-use log::{error, warn};
+use log::error;
 
 use crate::discord::util::{format_online_players, sanitize_for_markdown};
 use crate::discord::*;
@@ -29,6 +30,9 @@ use structopt::StructOpt;
 mod discord;
 mod error;
 mod logging;
+
+/// Maintains a hashset of players currently on the Minecraft server
+static ONLINE_PLAYERS: OnceCell<Mutex<HashSet<String>>> = OnceCell::new();
 
 #[derive(StructOpt, Debug)]
 #[structopt(settings(&[AppSettings::ColoredHelp]))]
@@ -99,11 +103,9 @@ fn main() -> Result<(), Error> {
             jvm_flags: opt.jvm_flags,
         };
         let mut mc_server = McServer::new(mc_config);
-        let online_players = Arc::new(Mutex::new(HashSet::new()));
+        ONLINE_PLAYERS.set(Mutex::new(HashSet::new())).unwrap();
 
-        let discord;
-        // Set up discord bridge if enabled
-        if opt.bridge_to_discord {
+        let discord = if opt.bridge_to_discord {
             if opt.discord_channel_id.is_none() {
                 error!("Discord bridge was enabled but a channel ID to bridge to \
                         was not provided.");
@@ -116,47 +118,14 @@ fn main() -> Result<(), Error> {
                 return;
             }
 
-            discord = DiscordBridge::new(
+            setup_discord(
                 opt.discord_token.unwrap(),
-                ChannelId(opt.discord_channel_id.unwrap())
-            ).await.expect("Could not connect to Discord");
-
-            let cmd_sender_clone = mc_server.cmd_sender.clone();
-            let discord_clone = discord.clone();
-            let online_players_clone = online_players.clone();
-            tokio::spawn(async move {
-                let cmd_sender = cmd_sender_clone;
-                let discord = discord_clone;
-                let online_players = online_players_clone;
-                let cmd_parser = DiscordBridge::command_parser();
-
-                // For all received Discord events, map the event to a `ServerCommand`
-                // (if necessary) and send it to the Minecraft server
-                let mut events = discord.cluster().unwrap().events().await;
-                while let Some(e) = events.next().await {
-                    let discord = discord.clone();
-                    let online_players = online_players.clone();
-                    let mut cmd_sender_clone = cmd_sender.clone();
-                    let cmd_parser_clone = cmd_parser.clone();
-
-                    tokio::spawn(async move {
-                        match discord.handle_discord_event(
-                            e,
-                            cmd_parser_clone,
-                            online_players
-                        ).await {
-                            Ok(Some(cmd)) => {
-                                cmd_sender_clone.send(cmd).await.ok();
-                            },
-                            Err(e) => warn!("Failed to handle Discord event: {:?}", e),
-                            _ => {}
-                        }
-                    });
-                }
-            });
+                ChannelId(opt.discord_channel_id.unwrap()),
+                mc_server.cmd_sender.clone()
+            ).await.expect("Could not connect to Discord")
         } else {
-            discord = DiscordBridge::new_noop();
-        }
+            DiscordBridge::new_noop()
+        };
 
         mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
         let mut last_start_time = Instant::now();
@@ -167,6 +136,7 @@ fn main() -> Result<(), Error> {
             .template("{bar:30[>20]} {pos:>2}%")
         );
 
+        // This loop handles both user input and events from the Minecraft server
         loop {
             tokio::select! {
                 e = mc_server.event_receiver.next() => if let Some(e) = e {
@@ -181,7 +151,7 @@ fn main() -> Result<(), Error> {
                                         sanitize_for_markdown(&name)
                                     ));
 
-                                    let mut online_players = online_players.lock().await;
+                                    let mut online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
                                     online_players.remove(&name);
                                     discord.clone().set_channel_topic(
                                         format_online_players(&online_players, true)
@@ -193,7 +163,7 @@ fn main() -> Result<(), Error> {
                                         sanitize_for_markdown(&name)
                                     ));
 
-                                    let mut online_players = online_players.lock().await;
+                                    let mut online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
                                     online_players.insert(name);
                                     discord.clone().set_channel_topic(
                                         format_online_players(&online_players, true)
