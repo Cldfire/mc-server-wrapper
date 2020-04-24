@@ -5,8 +5,8 @@ use std::collections::HashSet;
 ///
 /// `short` can be set to true to truncate the list.
 pub fn format_online_players(online_players: &HashSet<String>, short: bool) -> String {
-    // Sort the players for stable name order
-    let mut online_players_vec: Vec<_> = online_players.into_iter().collect();
+    // Sort the players for stable name order and sanitize their names
+    let mut online_players_vec: Vec<_> = online_players.iter().map(sanitize_for_markdown).collect();
     online_players_vec.sort();
 
     match online_players.len() {
@@ -46,14 +46,52 @@ pub fn format_online_players(online_players: &HashSet<String>, short: bool) -> S
     }
 }
 
+/// Sanitizes the given text for usage in a markdown context
+pub fn sanitize_for_markdown<T: AsRef<str>>(text: T) -> String {
+    let text = text.as_ref();
+
+    text.chars().fold(String::new(), |mut s, c| {
+        match c {
+            '*' | '_' | '~' | '>' | '`' => {
+                s.push('\\');
+                s.push(c);
+            }
+            _ => s.push(c),
+        }
+        s
+    })
+}
+
 #[cfg(test)]
 mod test {
+    use super::sanitize_for_markdown;
+
+    #[test]
+    fn sanitize_markdown() {
+        let testcase = "~*`cdawg_m`>";
+        assert_eq!(sanitize_for_markdown(testcase), "\\~\\*\\`cdawg\\_m\\`\\>");
+    }
+
     mod format_online_players {
         use super::super::format_online_players;
         use std::collections::HashSet;
 
         mod common {
             use super::*;
+
+            #[test]
+            fn markdown_in_names() {
+                let mut online_players = HashSet::new();
+                online_players.insert("p1_".into());
+                online_players.insert("*`p2`".into());
+                let expected = "\\*\\`p2\\` and p1\\_ are playing Minecraft";
+
+                let formatted = format_online_players(&online_players, true);
+                assert_eq!(&formatted, expected);
+
+                let formatted = format_online_players(&online_players, false);
+                assert_eq!(&formatted, expected);
+            }
 
             #[test]
             fn no_players() {
@@ -132,11 +170,11 @@ mod test {
             fn seven_players() {
                 let mut online_players = HashSet::new();
                 online_players.insert("p1".into());
-                online_players.insert("p2".into());
                 online_players.insert("p3".into());
+                online_players.insert("p2".into());
                 online_players.insert("p4".into());
-                online_players.insert("p5".into());
                 online_players.insert("p6".into());
+                online_players.insert("p5".into());
                 online_players.insert("p7".into());
                 let formatted = format_online_players(&online_players, true);
 
@@ -154,11 +192,11 @@ mod test {
             fn seven_players() {
                 let mut online_players = HashSet::new();
                 online_players.insert("p1".into());
-                online_players.insert("p2".into());
                 online_players.insert("p3".into());
+                online_players.insert("p2".into());
                 online_players.insert("p4".into());
-                online_players.insert("p5".into());
                 online_players.insert("p6".into());
+                online_players.insert("p5".into());
                 online_players.insert("p7".into());
                 let formatted = format_online_players(&online_players, false);
 

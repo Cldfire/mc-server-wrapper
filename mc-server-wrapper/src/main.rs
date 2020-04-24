@@ -17,7 +17,7 @@ use mc_server_wrapper_lib::communication::*;
 use mc_server_wrapper_lib::parse::*;
 use mc_server_wrapper_lib::{McServer, McServerConfig};
 
-use crate::discord::util::format_online_players;
+use crate::discord::util::{format_online_players, sanitize_for_markdown};
 use crate::discord::*;
 use crate::error::*;
 use dotenv::dotenv;
@@ -155,9 +155,10 @@ fn main() -> Result<(), Error> {
 
                             match specific_msg {
                                 ConsoleMsgSpecific::PlayerLogout { name } => {
-                                    discord.clone().send_channel_msg(
-                                        "_**".to_string() + &name + "** left the game_"
-                                    );
+                                    discord.clone().send_channel_msg(format!(
+                                        "_**{}** left the game_",
+                                        sanitize_for_markdown(&name)
+                                    ));
 
                                     let mut online_players = online_players.lock().await;
                                     online_players.remove(&name);
@@ -166,9 +167,10 @@ fn main() -> Result<(), Error> {
                                     );
                                 },
                                 ConsoleMsgSpecific::PlayerLogin { name, .. } => {
-                                    discord.clone().send_channel_msg(
-                                        "_**".to_string() + &name + "** joined the game_"
-                                    );
+                                    discord.clone().send_channel_msg(format!(
+                                        "_**{}** joined the game_",
+                                        sanitize_for_markdown(&name)
+                                    ));
 
                                     let mut online_players = online_players.lock().await;
                                     online_players.insert(name);
@@ -177,9 +179,11 @@ fn main() -> Result<(), Error> {
                                     );
                                 },
                                 ConsoleMsgSpecific::PlayerMsg { name, msg } => {
-                                    discord.clone().send_channel_msg(
-                                        "**".to_string() + &name + "**  " + &msg
-                                    );
+                                    discord.clone().send_channel_msg(format!(
+                                        "**{}** {}",
+                                        sanitize_for_markdown(name),
+                                        msg
+                                    ));
                                 },
                                 ConsoleMsgSpecific::SpawnPrepareProgress { progress, .. } => {
                                     progress_bar.set_position(progress as u64);

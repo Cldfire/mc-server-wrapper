@@ -127,9 +127,10 @@ impl DiscordBridge {
                     let tellraw_msg = MessageBuilder::builder(Payload::text("[D] "))
                         .bold(true)
                         .color(Color::LightPurple)
-                        .then(Payload::text(
-                            &("<".to_string() + &msg.author.name + "> " + &msg.content),
-                        ))
+                        .then(Payload::text(&format!(
+                            "<{}> {}",
+                            &msg.author.name, &msg.content
+                        )))
                         .bold(false)
                         .color(Color::White)
                         .build();
@@ -139,7 +140,7 @@ impl DiscordBridge {
                         "{}",
                         ConsoleMsg::new(
                             ConsoleMsgType::Info,
-                            "[D] <".to_string() + &msg.author.name + "> " + &msg.content
+                            format!("[D] <{}> {}", &msg.author.name, &msg.content)
                         )
                     );
 
