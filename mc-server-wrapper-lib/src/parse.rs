@@ -57,18 +57,14 @@ impl ConsoleMsgSpecific {
             ConsoleMsgSpecific::PlayerAuth { name, uuid }
         } else if console_msg.msg_type == ConsoleMsgType::Info
             && (console_msg.thread_name.starts_with("Async Chat Thread")
-                || console_msg.msg.starts_with("<") && console_msg.thread_name == "Server thread")
+                || console_msg.msg.starts_with('<') && console_msg.thread_name == "Server thread")
         {
             let (name, msg) = {
-                let (name, remain) =
-                    console_msg
-                        .msg
-                        .split_at(if let Some(idx) = console_msg.msg.find('>') {
-                            idx
-                        } else {
-                            // This is not a player message
-                            return None;
-                        });
+                let (name, remain) = console_msg
+                    .msg
+                    // If a > cannot be found, this is not a player message
+                    // and therefore we return
+                    .split_at(console_msg.msg.find('>')?);
 
                 // Trim "<" from the player's name and "> " from the msg
                 (name[1..].to_string(), remain[2..].to_string())

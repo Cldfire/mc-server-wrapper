@@ -52,14 +52,13 @@ impl McServer {
             mc_stdin: Arc::new(Mutex::new(None)),
         });
 
-        let mc_server_internal_clone = mc_server_internal.clone();
         // Start a task to receive server commands and handle them appropriately
         // TODO: move this out of this function
         tokio::spawn(async move {
             while let Some(cmd) = cmd_receiver.next().await {
                 use ServerCommand::*;
                 use ServerEvent::*;
-                let mc_server_internal = mc_server_internal_clone.clone();
+                let mc_server_internal = mc_server_internal.clone();
 
                 match cmd {
                     TellRaw(json) => {

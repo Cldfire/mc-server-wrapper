@@ -71,7 +71,7 @@ fn main() -> Result<(), Error> {
 
         let discord_channel_id = opt.discord_channel_id.take()
             .unwrap_or_else(||
-                env::var("DISCORD_CHANNEL_ID").unwrap_or("".into()).parse().unwrap_or(0)
+                env::var("DISCORD_CHANNEL_ID").unwrap_or_else(|_| "".into()).parse().unwrap_or(0)
             );
         let discord_token = opt.discord_token.take()
             .unwrap_or_else(||
@@ -86,7 +86,7 @@ fn main() -> Result<(), Error> {
                         was not provided. Either set the environment variable \
                         `DISCORD_CHANNEL_ID` or provide it via the command line \
                         with the `--discord-channel-id` option");
-                return ();
+                return;
             }
 
             if discord_token == "" {
@@ -94,7 +94,7 @@ fn main() -> Result<(), Error> {
                         bot was not provided. Either set the environment variable \
                         `DISCORD_TOKEN` or provide it via the command line with the \
                         `--discord-token` option");
-                return ();
+                return;
             }
 
             discord = DiscordBridge::new(discord_token, ChannelId(discord_channel_id))

@@ -1,5 +1,7 @@
 # mc-server-wrapper
 
+![CI](https://github.com/Cldfire/mc-server-wrapper/workflows/CI/badge.svg)
+
 Lightweight Rust program to run a Java Minecraft server (vanilla, Spigot, or PaperSpigot), providing niceties such as a Discord chat bridge, server restart-on-crash, and improved console output.
 
 Not production-ready, but getting there. Feel free to use it for non-critical servers, and please report issues!
