@@ -6,10 +6,12 @@ use tokio::stream::StreamExt;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
+use thiserror::Error;
+
 use std::io;
 use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
-use std::sync::Arc;
+use std::{ffi::OsStr, sync::Arc};
 
 use crate::communication::*;
 use crate::parse::{ConsoleMsg, ConsoleMsgSpecific};
@@ -23,11 +25,45 @@ mod test;
 #[derive(Debug)]
 pub struct McServerConfig {
     /// The path to the server jarfile
-    pub server_path: PathBuf,
+    server_path: PathBuf,
     /// The amount of memory in megabytes to allocate for the server
-    pub memory: u16,
+    memory: u16,
     /// Custom flags to pass to the JVM
-    pub jvm_flags: Option<String>,
+    jvm_flags: Option<String>,
+}
+
+/// Errors regarding an `McServerConfig`
+#[derive(Error, Debug)]
+pub enum McServerConfigError {
+    #[error("the provided server path ({0}) was not an accessible file")]
+    ServerPathFileNotPresent(PathBuf),
+}
+
+impl McServerConfig {
+    /// Create a new `McServerConfig`
+    pub fn new<P: Into<PathBuf>>(server_path: P, memory: u16, jvm_flags: Option<String>) -> Self {
+        let server_path = server_path.into();
+        McServerConfig {
+            server_path,
+            memory,
+            jvm_flags,
+        }
+    }
+
+    /// Validates aspects of the config
+    ///
+    /// The validation ensures that the provided `server_path` is a path to a
+    /// file present on the filesystem. The config will be returned to you
+    /// if it is valid.
+    pub fn validate(self) -> Result<Self, McServerConfigError> {
+        use McServerConfigError::*;
+
+        if !self.server_path.is_file() {
+            Err(ServerPathFileNotPresent(self.server_path.clone()))
+        } else {
+            Ok(self)
+        }
+    }
 }
 
 /// Represents a single wrapped Minecraft server that may be running or stopped
@@ -42,10 +78,14 @@ pub struct McServer {
 impl McServer {
     /// Create a new `McServer` with the given `McServerConfig`.
     ///
+    /// The server config will be validated before it is used.
+    ///
     /// Note that the Minecraft server is not launched until you send a command
     /// to cause that to happen.
     // TODO: should this be called `manage`?
-    pub fn new(config: McServerConfig) -> Self {
+    pub fn new(config: McServerConfig) -> Result<Self, McServerConfigError> {
+        let config = config.validate()?;
+
         let (cmd_sender, mut cmd_receiver) = mpsc::channel::<ServerCommand>(64);
         let (event_sender, event_receiver) = mpsc::channel::<ServerEvent>(64);
         let mc_server_internal = Arc::new(McServerInternal {
@@ -135,10 +175,10 @@ impl McServer {
             }
         });
 
-        McServer {
+        Ok(McServer {
             cmd_sender,
             event_receiver,
-        }
+        })
     }
 }
 
@@ -159,13 +199,17 @@ impl McServerInternal {
     // TODO: write better docs
     // TODO: maybe split into functions that start the server and interface
     // with it
+    // TODO: audit unwrapping
     async fn run_server(&self) -> (ExitStatus, Option<ShutdownReason>) {
-        // TODO: don't unwrap / expect, all over this function
-        let folder = self.config.server_path.as_path().parent().unwrap();
+        let folder = self
+            .config
+            .server_path
+            .as_path()
+            .parent()
+            .map(|p| p.as_os_str())
+            .unwrap_or_else(|| OsStr::new("."));
         let file = self.config.server_path.file_name().unwrap();
 
-        // TODO: support running from inside folder containing server jar
-        // (don't run cd)
         let mut process = process::Command::new("sh")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -173,16 +217,12 @@ impl McServerInternal {
             .args(&[
                 "-c",
                 &format!(
-                    "cd {} && exec java -Xms{}M -Xmx{}M {} -jar {} nogui",
-                    folder.to_str().unwrap(),
+                    "cd {:?} && exec java -Xms{}M -Xmx{}M {} -jar {:?} nogui",
+                    folder,
                     self.config.memory,
                     self.config.memory,
-                    self.config
-                        .jvm_flags
-                        .as_ref()
-                        .map(|s| s.as_str())
-                        .unwrap_or(""),
-                    file.to_str().unwrap()
+                    self.config.jvm_flags.as_deref().unwrap_or(""),
+                    file
                 ),
             ])
             .spawn()

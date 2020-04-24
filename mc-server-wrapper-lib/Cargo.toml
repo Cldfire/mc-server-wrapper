@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 chrono = "0.4"
 tokio = { version = "0.2", features = ["full"] }
+thiserror = "1.0"
 
 [dev-dependencies]
 rusty-hook = "^0.11.1"

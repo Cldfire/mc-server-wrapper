@@ -13,6 +13,7 @@ Not production-ready, but getting there. Feel free to use it for non-critical se
         * `list`: replies with a list of people playing Minecraft
     * Server topic displays list of online players
 * Run server with configurable memory allocation
+    * Also allows passing custom JVM flags if desired
 * Restart server on crash
 * Auto-agree to EULA
 * Improved console output formatting

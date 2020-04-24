@@ -97,12 +97,13 @@ fn main() -> Result<(), Error> {
             opt.log_level_discord
         ).unwrap();
 
-        let mc_config = McServerConfig {
-            server_path: opt.server_path.clone(),
-            memory: opt.memory,
-            jvm_flags: opt.jvm_flags,
-        };
-        let mut mc_server = McServer::new(mc_config);
+        let mc_config = McServerConfig::new(
+            opt.server_path.clone(),
+            opt.memory,
+            opt.jvm_flags,
+        );
+        // TODO: don't expect here
+        let mut mc_server = McServer::new(mc_config).expect("minecraft server config was not valid");
         ONLINE_PLAYERS.set(Mutex::new(HashSet::new())).unwrap();
 
         let discord = if opt.bridge_to_discord {
