@@ -15,9 +15,10 @@ use twilight::model::id::ChannelId;
 
 use mc_server_wrapper_lib::communication::*;
 use mc_server_wrapper_lib::parse::*;
+use mc_server_wrapper_lib::CONSOLE_MSG_LOG_TARGET;
 use mc_server_wrapper_lib::{McServer, McServerConfig};
 
-use log::error;
+use log::*;
 
 use crate::discord::util::{format_online_players, sanitize_for_markdown};
 use crate::discord::*;
@@ -84,6 +85,7 @@ pub struct Opt {
 
 fn main() -> Result<(), Error> {
     let mut rt = Runtime::new().unwrap();
+    CONSOLE_MSG_LOG_TARGET.set("mc").unwrap();
 
     // TODO: use proc macro instead if shutdown_timeout no longer needed
     rt.block_on(async {
@@ -145,6 +147,10 @@ fn main() -> Result<(), Error> {
                         ServerEvent::ConsoleEvent(console_msg, Some(specific_msg)) => {
                             let mut print_msg = true;
 
+                            if let ConsoleMsgType::Unknown(ref s) = console_msg.msg_type {
+                                warn!("Encountered unknown message type from Minecraft: {}", s);
+                            }
+
                             match specific_msg {
                                 ConsoleMsgSpecific::PlayerLogout { name } => {
                                     discord.clone().send_channel_msg(format!(
@@ -190,23 +196,23 @@ fn main() -> Result<(), Error> {
                             }
 
                             if print_msg {
-                                println!("{}", console_msg);
+                                console_msg.log();
                             }
                         },
                         ServerEvent::ConsoleEvent(console_msg, None) => {
-                            println!("{}", console_msg);
+                            console_msg.log();
                         },
                         ServerEvent::StdoutLine(line) => {
-                            println!("{}", line);
+                            info!(target: CONSOLE_MSG_LOG_TARGET.get().unwrap(), "{}", line);
                         },
                         ServerEvent::StderrLine(line) => {
-                            println!("{}", line);
+                            warn!(target: CONSOLE_MSG_LOG_TARGET.get().unwrap(), "{}", line);
                         },
 
                         ServerEvent::ServerStopped(exit_status, reason) => if let Some(reason) = reason {
                             match reason {
                                 ShutdownReason::EulaNotAccepted => {
-                                    println!("Agreeing to EULA!");
+                                    info!("Agreeing to EULA!");
                                     mc_server.cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();
                                 }
                             }
@@ -221,11 +227,11 @@ fn main() -> Result<(), Error> {
                             // attempt to catch these cases by not restarting if the
                             // server crashed twice within a small time window
                             if last_start_time.elapsed().as_secs() < 60 {
-                                println!("Fatal error believed to have been encountered, not \
+                                error!("Fatal error believed to have been encountered, not \
                                     restarting server");
                                 mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                             } else {
-                                println!("Restarting server...");
+                                info!("Restarting server...");
                                 mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
                                 last_start_time = Instant::now();
                                 // TODO: tell discord that the mc server crashed
@@ -234,7 +240,7 @@ fn main() -> Result<(), Error> {
 
                         ServerEvent::AgreeToEulaResult(res) => {
                             if let Err(e) = res {
-                                println!("Failed to agree to EULA: {:?}", e);
+                                error!("Failed to agree to EULA: {:?}", e);
                                 mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                             } else {
                                 mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();

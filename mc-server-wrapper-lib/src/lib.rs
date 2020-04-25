@@ -8,6 +8,8 @@ use tokio::sync::Mutex;
 
 use thiserror::Error;
 
+use once_cell::sync::OnceCell;
+
 use std::io;
 use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
@@ -20,6 +22,11 @@ pub mod communication;
 pub mod parse;
 #[cfg(test)]
 mod test;
+
+/// The value that `ConsoleMsg.log()` will use for `log!`'s target parameter
+///
+/// Will be set to a default of `mc` if not set elsewhere.
+pub static CONSOLE_MSG_LOG_TARGET: OnceCell<&str> = OnceCell::new();
 
 /// Configuration provided to setup an `McServer` instance.
 #[derive(Debug)]

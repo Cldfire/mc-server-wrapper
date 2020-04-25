@@ -1,5 +1,8 @@
 use chrono::offset::Local;
 use chrono::NaiveTime;
+
+use log::log;
+
 use fmt::Display;
 use std::fmt;
 
@@ -190,6 +193,21 @@ impl ConsoleMsg {
         }
     }
 
+    /// Logs the `ConsoleMsg` based on its type
+    ///
+    /// This uses the `log!` macro from the `log` crate; you will need to set
+    /// up logging in your application in order to see output from this.
+    ///
+    /// The `target:` parameter of `log!` will be set to `CONSOLE_MSG_LOG_TARGET`.
+    pub fn log(&self) {
+        log!(
+            target: crate::CONSOLE_MSG_LOG_TARGET.get_or_init(|| "mc"),
+            self.msg_type.clone().into(),
+            "{}",
+            self.msg
+        );
+    }
+
     /// Constructs a `ConsoleMsg` from a line of console output.
     pub(crate) fn try_parse_from(raw: &str) -> Option<ConsoleMsg> {
         let (mut timestamp, remain) = raw.split_at(raw.find(']')?);
@@ -215,22 +233,23 @@ impl ConsoleMsg {
 }
 
 /// Various types of console messages that can occur
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ConsoleMsgType {
     Info,
     Warn,
     Error,
-    /// An unknown type of message
-    Unknown,
+    /// An unknown type of message with its value from Minecraft
+    Unknown(String),
 }
 
-impl ConsoleMsgType {
-    fn parse_from(raw: &str) -> Self {
-        match raw {
-            "INFO" => ConsoleMsgType::Info,
-            "WARN" => ConsoleMsgType::Warn,
-            "ERROR" => ConsoleMsgType::Error,
-            _ => ConsoleMsgType::Unknown,
+impl From<ConsoleMsgType> for log::Level {
+    fn from(msg: ConsoleMsgType) -> Self {
+        use ConsoleMsgType::*;
+
+        match msg {
+            Info | Unknown(_) => log::Level::Info,
+            Warn => log::Level::Warn,
+            Error => log::Level::Error,
         }
     }
 }
@@ -243,7 +262,18 @@ impl Display for ConsoleMsgType {
             Info => f.write_str("INFO"),
             Warn => f.write_str("WARN"),
             Error => f.write_str("ERROR"),
-            Unknown => f.write_str("?"),
+            Unknown(ref s) => f.write_str(s),
+        }
+    }
+}
+
+impl ConsoleMsgType {
+    fn parse_from(raw: &str) -> Self {
+        match raw {
+            "INFO" => ConsoleMsgType::Info,
+            "WARN" => ConsoleMsgType::Warn,
+            "ERROR" => ConsoleMsgType::Error,
+            _ => ConsoleMsgType::Unknown(raw.into()),
         }
     }
 }

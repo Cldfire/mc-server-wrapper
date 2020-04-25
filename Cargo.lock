@@ -680,6 +680,8 @@ name = "mc-server-wrapper-lib"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "log",
+ "once_cell",
  "rusty-hook",
  "thiserror",
  "tokio",

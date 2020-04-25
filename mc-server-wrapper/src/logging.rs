@@ -1,3 +1,4 @@
+use mc_server_wrapper_lib::CONSOLE_MSG_LOG_TARGET;
 use std::path::Path;
 
 pub fn setup_logger<P: AsRef<Path>>(
@@ -31,6 +32,10 @@ pub fn setup_logger<P: AsRef<Path>>(
         )
         .level_for("twilight-cache-trait", log_level_discord.to_level_filter())
         .level_for("mc_server_wrapper", log_level_self.to_level_filter())
+        .level_for(
+            *CONSOLE_MSG_LOG_TARGET.get().unwrap(),
+            log::LevelFilter::Off,
+        )
         .chain(fern::log_file(logfile_path)?);
 
     let stdout_logger = fern::Dispatch::new()
@@ -52,6 +57,10 @@ pub fn setup_logger<P: AsRef<Path>>(
         .level_for("twilight-cache-inmemory", log::LevelFilter::Warn)
         .level_for("twilight-cache-trait", log::LevelFilter::Warn)
         .level_for("mc_server_wrapper", log::LevelFilter::Info)
+        .level_for(
+            *CONSOLE_MSG_LOG_TARGET.get().unwrap(),
+            log::LevelFilter::Info,
+        )
         .chain(std::io::stdout());
 
     fern::Dispatch::new()
