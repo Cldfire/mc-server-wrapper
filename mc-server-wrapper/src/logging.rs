@@ -7,6 +7,8 @@ pub fn setup_logger<P: AsRef<Path>>(
     log_level_self: log::Level,
     log_level_discord: log::Level,
 ) -> Result<(), fern::InitError> {
+    let colors = fern::colors::ColoredLevelConfig::new();
+
     let file_logger = fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -39,12 +41,12 @@ pub fn setup_logger<P: AsRef<Path>>(
         .chain(fern::log_file(logfile_path)?);
 
     let stdout_logger = fern::Dispatch::new()
-        .format(|out, message, record| {
+        .format(move |out, message, record| {
             out.finish(format_args!(
                 "[{}] [{}, {}]: {}",
                 chrono::Local::now().format("%-I:%M:%S %p"),
                 record.target(),
-                record.level(),
+                colors.color(record.level()),
                 message
             ))
         })

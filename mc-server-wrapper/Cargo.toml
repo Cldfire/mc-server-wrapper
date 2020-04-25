@@ -13,6 +13,6 @@ dotenv = "0.15"
 twilight = { git = "https://github.com/twilight-rs/twilight.git" }
 minecraft-chat = "0.1"
 log = "0.4"
-fern = "0.6"
+fern = { version = "0.6", features = ["colored"] }
 chrono = "0.4"
 once_cell = "1.3"
