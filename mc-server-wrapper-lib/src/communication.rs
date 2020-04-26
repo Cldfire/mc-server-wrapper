@@ -27,9 +27,9 @@ pub enum ServerEvent {
     /// An unknown line received from the server's stderr
     StderrLine(String),
 
-    /// The Minecraft server process exited with the given exit status and, if
+    /// The Minecraft server process finished with the given result  and, if
     /// known, a reason for exiting
-    ServerStopped(ExitStatus, Option<ShutdownReason>),
+    ServerStopped(tokio::io::Result<ExitStatus>, Option<ShutdownReason>),
 
     /// Response to `AgreeToEula`
     AgreeToEulaResult(io::Result<()>),

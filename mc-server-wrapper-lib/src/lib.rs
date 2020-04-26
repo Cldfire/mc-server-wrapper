@@ -42,7 +42,7 @@ pub struct McServerConfig {
 /// Errors regarding an `McServerConfig`
 #[derive(Error, Debug)]
 pub enum McServerConfigError {
-    #[error("the provided server path ({0}) was not an accessible file")]
+    #[error("the provided server path \"{0}\" was not an accessible file")]
     ServerPathFileNotPresent(PathBuf),
 }
 
@@ -111,27 +111,18 @@ impl McServer {
 
                 match cmd {
                     TellRaw(json) => {
-                        let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
-                        if let Some(mc_stdin) = &mut *mc_stdin {
-                            // TODO: handle error?
-                            let _ = mc_stdin
-                                .write_all(("tellraw @a ".to_string() + &json + "\n").as_bytes())
-                                .await;
-                        }
+                        // TODO: handle error
+                        let _ = mc_server_internal
+                            .write_to_stdin(format!("tellraw @a {}\n", json))
+                            .await;
                     }
                     WriteCommandToStdin(text) => {
-                        let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
-                        if let Some(mc_stdin) = &mut *mc_stdin {
-                            // TODO: handle error?
-                            let _ = mc_stdin.write_all((text + "\n").as_bytes()).await;
-                        }
+                        // TODO: handle error
+                        let _ = mc_server_internal.write_to_stdin(text + "\n").await;
                     }
                     WriteToStdin(text) => {
-                        let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
-                        if let Some(mc_stdin) = &mut *mc_stdin {
-                            // TODO: handle error?
-                            let _ = mc_stdin.write_all(text.as_bytes()).await;
-                        }
+                        // TODO: handle error
+                        let _ = mc_server_internal.write_to_stdin(text).await;
                     }
 
                     AgreeToEula => {
@@ -145,12 +136,8 @@ impl McServer {
                         });
                     }
                     StartServer => {
-                        // Make sure the server is not already running
-                        {
-                            let mc_stdin = mc_server_internal.mc_stdin.lock().await;
-                            if mc_stdin.is_some() {
-                                continue;
-                            }
+                        if mc_server_internal.server_running().await {
+                            continue;
                         }
 
                         // Spawn a task to drive the server process to completion
@@ -166,13 +153,8 @@ impl McServer {
                         });
                     }
                     StopServer { forever } => {
-                        let mut mc_stdin = mc_server_internal.mc_stdin.lock().await;
-                        if let Some(mc_stdin) = &mut *mc_stdin {
-                            // TODO: handle error?
-                            let _ = mc_stdin
-                                .write_all(("stop".to_string() + "\n").as_bytes())
-                                .await;
-                        }
+                        // TODO: handle error
+                        let _ = mc_server_internal.write_to_stdin("stop\n").await;
 
                         if forever {
                             break;
@@ -207,7 +189,7 @@ impl McServerInternal {
     // TODO: maybe split into functions that start the server and interface
     // with it
     // TODO: audit unwrapping
-    async fn run_server(&self) -> (ExitStatus, Option<ShutdownReason>) {
+    async fn run_server(&self) -> (tokio::io::Result<ExitStatus>, Option<ShutdownReason>) {
         let folder = self
             .config
             .server_path
@@ -247,8 +229,7 @@ impl McServerInternal {
         let mut stdout = BufReader::new(process.stdout.take().unwrap()).lines();
         let mut stderr = BufReader::new(process.stderr.take().unwrap()).lines();
 
-        let status_handle =
-            tokio::spawn(async { process.await.expect("child process encountered an error") });
+        let status_handle = tokio::spawn(async { process.await });
 
         let event_sender_clone = self.event_sender.clone();
         let stderr_handle = tokio::spawn(async move {
@@ -308,10 +289,25 @@ impl McServerInternal {
         (status.unwrap(), stdout_val.unwrap())
     }
 
+    /// Returns true if the server is currently running
+    async fn server_running(&self) -> bool {
+        let mc_stdin = self.mc_stdin.lock().await;
+        mc_stdin.is_some()
+    }
+
+    /// Writes the given bytes to the server's stdin if the server is running
+    async fn write_to_stdin<B: AsRef<[u8]>>(&self, bytes: B) -> io::Result<()> {
+        let mut stdin = self.mc_stdin.lock().await;
+        if let Some(stdin) = &mut *stdin {
+            stdin.write_all(bytes.as_ref()).await
+        } else {
+            Ok(())
+        }
+    }
+
     /// Overwrites the `eula.txt` file with the contents `eula=true`.
     async fn agree_to_eula(&self) -> io::Result<()> {
-        let mut file =
-            File::create(self.config.server_path.parent().unwrap().join("eula.txt")).await?;
+        let mut file = File::create(self.config.server_path.with_file_name("eula.txt")).await?;
 
         file.write_all(b"eula=true").await
     }

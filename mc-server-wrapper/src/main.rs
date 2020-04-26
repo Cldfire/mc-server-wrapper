@@ -86,6 +86,7 @@ pub struct Opt {
 fn main() -> Result<(), Error> {
     let mut rt = Runtime::new().unwrap();
     CONSOLE_MSG_LOG_TARGET.set("mc").unwrap();
+    ONLINE_PLAYERS.set(Mutex::new(HashSet::new())).unwrap();
 
     // TODO: use proc macro instead if shutdown_timeout no longer needed
     rt.block_on(async {
@@ -106,7 +107,6 @@ fn main() -> Result<(), Error> {
         );
         // TODO: don't expect here
         let mut mc_server = McServer::new(mc_config).expect("minecraft server config was not valid");
-        ONLINE_PLAYERS.set(Mutex::new(HashSet::new())).unwrap();
 
         let discord = if opt.bridge_to_discord {
             if opt.discord_channel_id.is_none() {
@@ -209,34 +209,43 @@ fn main() -> Result<(), Error> {
                             warn!(target: CONSOLE_MSG_LOG_TARGET.get().unwrap(), "{}", line);
                         },
 
-                        ServerEvent::ServerStopped(exit_status, reason) => if let Some(reason) = reason {
+                        ServerEvent::ServerStopped(process_result, reason) => if let Some(reason) = reason {
                             match reason {
                                 ShutdownReason::EulaNotAccepted => {
                                     info!("Agreeing to EULA!");
                                     mc_server.cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();
                                 }
                             }
-                        } else if exit_status.success() {
-                            // TODO: we eventually need to not stop the server forever here
-                            //
-                            // have a `ShutdownReason` along the lines of "you told me to stop"
-                            mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                         } else {
-                            // There are circumstances where the status will be failure
-                            // and attempting to restart the server will always fail. We
-                            // attempt to catch these cases by not restarting if the
-                            // server crashed twice within a small time window
-                            if last_start_time.elapsed().as_secs() < 60 {
-                                error!("Fatal error believed to have been encountered, not \
-                                    restarting server");
-                                mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                            } else {
-                                info!("Restarting server...");
-                                mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
-                                last_start_time = Instant::now();
-                                // TODO: tell discord that the mc server crashed
+                            // TODO: clean this up so there's less repetition
+                            // introduce a `should_restart` variable
+                            match process_result {
+                                Ok(exit_status) => if exit_status.success() {
+                                    // TODO: we eventually need to not stop the server forever here
+                                    //
+                                    // have a `ShutdownReason` along the lines of "you told me to stop"
+                                    mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                                } else {
+                                    // There are circumstances where the status will be failure
+                                    // and attempting to restart the server will always fail. We
+                                    // attempt to catch these cases by not restarting if the
+                                    // server crashed twice within a small time window
+                                    if last_start_time.elapsed().as_secs() < 60 {
+                                        error!("Fatal error believed to have been encountered, not restarting server");
+                                        mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                                    } else {
+                                        info!("Restarting server...");
+                                        mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                                        last_start_time = Instant::now();
+                                        // TODO: tell discord that the mc server crashed
+                                    }
+                                },
+                                Err(e) => {
+                                    error!("Minecraft server process finished with error: {}, not restarting server", e);
+                                    mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                                }
                             }
-                        },
+                        }
 
                         ServerEvent::AgreeToEulaResult(res) => {
                             if let Err(e) = res {
