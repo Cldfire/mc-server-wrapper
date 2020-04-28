@@ -28,7 +28,7 @@ pub struct Opt {
 async fn main() {
     let opt = Opt::from_args();
 
-    let mc_config = McServerConfig::new(opt.server_path.clone(), 1024, None);
+    let mc_config = McServerConfig::new(opt.server_path.clone(), 1024, None, true);
     let mut mc_server = McServer::new(mc_config).expect("minecraft server config was not valid");
     mc_server
         .cmd_sender
@@ -68,14 +68,9 @@ async fn main() {
                 } else {
                     match process_result {
                         Ok(exit_status) => {
-                            println!(
-                                "Minecraft server process finished with status: {}",
-                                exit_status
-                            );
+                            println!("Minecraft server process finished with {}", exit_status)
                         }
-                        Err(e) => {
-                            eprintln!("Minecraft server process finished with error: {}", e);
-                        }
+                        Err(e) => eprintln!("Minecraft server process finished with error: {}", e),
                     }
 
                     // Note that this example does not implement any kind of restart-after-crash

@@ -41,4 +41,8 @@ These environment variables can also be provided in a `.env` file of the above f
 
 ## Library
 
-The binary for this project is built on top of a library; if you want to implement a different feature set than the one I've chosen to, or implement the features in a different way, you can easily do so. See the [`mc-server-wrapper-lib` README](mc-server-wrapper-lib/README.md) for more.
+The binary for this project is built on top of a library; if you want to implement a different feature set than the one I've chosen to, or implement the features in a different way, you can easily do so. See the [`mc-server-wrapper-lib` README](mc-server-wrapper-lib/README.md) and its [basic example](mc-server-wrapper-lib/examples/basic.rs) for more.
+
+```
+cargo run --example basic -- path/to/server.jar
+```

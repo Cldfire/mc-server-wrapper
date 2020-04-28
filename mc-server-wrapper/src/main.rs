@@ -104,6 +104,7 @@ fn main() -> Result<(), Error> {
             opt.server_path.clone(),
             opt.memory,
             opt.jvm_flags,
+            false
         );
         // TODO: don't expect here
         let mut mc_server = McServer::new(mc_config).expect("minecraft server config was not valid");

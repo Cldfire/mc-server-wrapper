@@ -29,6 +29,7 @@ mod test;
 pub static CONSOLE_MSG_LOG_TARGET: OnceCell<&str> = OnceCell::new();
 
 /// Configuration provided to setup an `McServer` instance.
+// TODO: make a builder for this
 #[derive(Debug)]
 pub struct McServerConfig {
     /// The path to the server jarfile
@@ -37,6 +38,17 @@ pub struct McServerConfig {
     memory: u16,
     /// Custom flags to pass to the JVM
     jvm_flags: Option<String>,
+    /// Whether or not the server's `stdin` should be inherited from the parent
+    /// process's `stdin`.
+    ///
+    /// An `McServer` constructed with `inherit_stdin` set to true will ignore
+    /// any commands it receives to write to the server's stdin.
+    ///
+    /// Set this to true if you want simple hands-free passthrough of whatever
+    /// you enter on the console to the Minecraft server. Set this to false
+    /// if you'd rather manually handle stdin and send data to the Minecraft
+    /// server.
+    inherit_stdin: bool,
 }
 
 /// Errors regarding an `McServerConfig`
@@ -48,12 +60,18 @@ pub enum McServerConfigError {
 
 impl McServerConfig {
     /// Create a new `McServerConfig`
-    pub fn new<P: Into<PathBuf>>(server_path: P, memory: u16, jvm_flags: Option<String>) -> Self {
+    pub fn new<P: Into<PathBuf>>(
+        server_path: P,
+        memory: u16,
+        jvm_flags: Option<String>,
+        inherit_stdin: bool,
+    ) -> Self {
         let server_path = server_path.into();
         McServerConfig {
             server_path,
             memory,
             jvm_flags,
+            inherit_stdin,
         }
     }
 
@@ -200,7 +218,11 @@ impl McServerInternal {
         let file = self.config.server_path.file_name().unwrap();
 
         let mut process = process::Command::new("sh")
-            .stdin(Stdio::piped())
+            .stdin(if self.config.inherit_stdin {
+                Stdio::inherit()
+            } else {
+                Stdio::piped()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .args(&[
@@ -218,7 +240,7 @@ impl McServerInternal {
             .unwrap();
 
         // Update the stored handle to the server's stdin
-        {
+        if !self.config.inherit_stdin {
             let mut mc_stdin = self.mc_stdin.lock().await;
             if mc_stdin.is_some() {
                 unreachable!()
@@ -278,7 +300,7 @@ impl McServerInternal {
         let (status, stdout_val, _) = tokio::join!(status_handle, stdout_handle, stderr_handle,);
 
         // Update the stored handle to the server's stdin
-        {
+        if !self.config.inherit_stdin {
             let mut mc_stdin = self.mc_stdin.lock().await;
             if mc_stdin.is_none() {
                 unreachable!()
