@@ -160,7 +160,7 @@ impl DiscordBridge {
                     self.handle_attachments_in_msg(&msg, mc_cmd_sender.clone())
                         .await;
 
-                    // We don't need to do anything for empty messages
+                    // We don't need to do anything past this point for empty messages
                     if msg.content.is_empty() {
                         debug!("Empty message from Discord: {:?}", &msg);
                         return Ok(());
@@ -173,7 +173,8 @@ impl DiscordBridge {
                         )))
                         .build();
 
-                    // Tellraw commands do not get logged to the console
+                    // Tellraw commands do not get logged to the console, so we
+                    // make up for that here
                     ConsoleMsg::new(
                         ConsoleMsgType::Info,
                         format!("{}<{}> {}", CHAT_PREFIX, &msg.author.name, &msg.content),
@@ -184,6 +185,10 @@ impl DiscordBridge {
                         .send(ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()))
                         .await
                         .ok();
+
+                    // We handle embeds after the message contents to replicate
+                    // Discord's layout (embeds after message)
+                    self.handle_embeds_in_msg(&msg, mc_cmd_sender).await;
                 }
             }
             _ => {}
@@ -223,6 +228,62 @@ impl DiscordBridge {
                 format!(
                     "{}{} uploaded {}: {}",
                     CHAT_PREFIX, &msg.author.name, type_str, attachment.url
+                ),
+            )
+            .log();
+
+            mc_cmd_sender
+                .send(ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()))
+                .await
+                .ok();
+        }
+    }
+
+    /// Handles any embeds in the given message
+    pub async fn handle_embeds_in_msg(
+        &self,
+        msg: &Message,
+        mut mc_cmd_sender: Sender<ServerCommand>,
+    ) {
+        for embed in msg.embeds.iter().filter(|e| e.url.is_some()) {
+            // TODO: this is kinda ugly
+            let link_text = if embed.title.is_some() && embed.provider.is_some() {
+                if embed.provider.as_ref().unwrap().name.is_some() {
+                    format!(
+                        "{} - {}",
+                        embed.provider.as_ref().unwrap().name.as_ref().unwrap(),
+                        embed.title.as_ref().unwrap()
+                    )
+                } else {
+                    embed.url.clone().unwrap()
+                }
+            } else {
+                embed.url.clone().unwrap()
+            };
+
+            let tellraw_msg = tellraw_prefix()
+                .then(Payload::text(&format!("{} linked \"", &msg.author.name)))
+                .italic(true)
+                .color(Color::Gray)
+                .then(Payload::text(&link_text))
+                .underlined(true)
+                .italic(true)
+                .color(Color::Gray)
+                .hover_show_text("Click to open the link in your web browser")
+                .click_open_url(embed.url.as_ref().unwrap())
+                .then(Payload::text("\""))
+                .italic(true)
+                .color(Color::Gray)
+                .build();
+
+            ConsoleMsg::new(
+                ConsoleMsgType::Info,
+                format!(
+                    "{}{} linked \"{}\": {}",
+                    CHAT_PREFIX,
+                    &msg.author.name,
+                    link_text,
+                    embed.url.as_ref().unwrap()
                 ),
             )
             .log();
