@@ -12,7 +12,7 @@ Not production-ready, but getting there. Feel free to use it for non-critical se
     * Commands (prefixed by `!mc`):
         * `list`: replies with a list of people playing Minecraft
     * Server topic displays list of online players
-    * Embeds and attachments from Discord are neatly formatted in Minecraft
+    * Embeds, mentions, and attachments in Discord messages are neatly formatted in Minecraft
 * Run server with configurable memory allocation
     * Also allows passing custom JVM flags if desired
 * Restart server on crash

@@ -671,6 +671,7 @@ dependencies = [
  "mc-server-wrapper-lib",
  "minecraft-chat",
  "once_cell",
+ "rusty-hook",
  "structopt",
  "tokio",
  "twilight",
@@ -684,6 +685,7 @@ dependencies = [
  "log",
  "once_cell",
  "rusty-hook",
+ "structopt",
  "thiserror",
  "tokio",
 ]

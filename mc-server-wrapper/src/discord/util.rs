@@ -1,5 +1,4 @@
 use super::CHAT_PREFIX;
-use log::warn;
 use minecraft_chat::{Color, MessageBuilder, Payload};
 use std::collections::{HashMap, HashSet};
 use twilight::model::id::{RoleId, UserId};
@@ -17,7 +16,6 @@ pub fn tellraw_prefix() -> MessageBuilder {
 /// Formats mentions in the given content using the given info
 ///
 /// `mentions` maps mentioned user IDs to their names
-// TODO: should fuzz this
 // TODO: this code is complicated, explore strategies to simplify?
 // TODO: does not handle escaped mentions (but this is a SUPER edge case and
 // the Discord client doesn't even handle those right either)
@@ -128,12 +126,7 @@ pub fn format_mentions_in<S: Into<String>>(
                         // from the id here
                     }
                 }
-                MentionType::Unknown => {
-                    warn!(
-                        "Encountered unknown mention type in Discord message: {}",
-                        &content
-                    );
-                }
+                MentionType::Unknown => unreachable!(),
             }
         }
 
