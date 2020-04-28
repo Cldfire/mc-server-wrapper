@@ -154,18 +154,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clicolors-control"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90082ee5dcdd64dc4e9e0d37fbf3ee325419e39c0092191e0393df65518f741e"
-dependencies = [
- "atty",
- "lazy_static",
- "libc",
- "winapi 0.3.8",
-]
-
-[[package]]
 name = "colored"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -178,18 +166,19 @@ dependencies = [
 
 [[package]]
 name = "console"
-version = "0.10.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6728a28023f207181b193262711102bfbaf47cc9d13bc71d0736607ef8efe88c"
+checksum = "6186a012aed6b3ab3b36015337ecbc30563961181868a31b6314e97e36e3c36e"
 dependencies = [
- "clicolors-control",
  "encode_unicode",
  "lazy_static",
  "libc",
  "regex",
+ "terminal_size",
  "termios",
  "unicode-width",
  "winapi 0.3.8",
+ "winapi-util",
 ]
 
 [[package]]
@@ -485,9 +474,9 @@ dependencies = [
 
 [[package]]
 name = "hermit-abi"
-version = "0.1.11"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a0d737e0f947a1864e93d33fdef4af8445a00d1ed8dc0c8ddb73139ea6abf15"
+checksum = "61565ff7aaace3525556587bd2dc31d4a07071957be715e63ce7b1eccf51a8f4"
 dependencies = [
  "libc",
 ]
@@ -1377,6 +1366,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "terminal_size"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "248dbcb93f8697c50b85b0492cf559b94667eb24c26934eae73ae5673175ebf6"
+dependencies = [
+ "libc",
+ "winapi 0.3.8",
+]
+
+[[package]]
 name = "termios"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1396,18 +1395,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54b3d3d2ff68104100ab257bb6bb0cb26c901abe4bd4ba15961f3bf867924012"
+checksum = "d12a1dae4add0f0d568eebc7bf142f145ba1aa2544cafb195c76f0f409091b60"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca972988113b7715266f91250ddb98070d033c62a011fa0fcc57434a649310dd"
+checksum = "3f34e0c1caaa462fd840ec6b768946ea1e7842620d94fe29d5b847138f521269"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1855,6 +1854,15 @@ name = "winapi-i686-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
+
+[[package]]
+name = "winapi-util"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70ec6ce85bb158151cae5e5c87f95a8e97d2c0c4b001223f33a334e3ce5de178"
+dependencies = [
+ "winapi 0.3.8",
+]
 
 [[package]]
 name = "winapi-x86_64-pc-windows-gnu"

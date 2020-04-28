@@ -110,7 +110,7 @@ impl McServer {
                 let mc_server_internal = mc_server_internal.clone();
 
                 match cmd {
-                    TellRaw(json) => {
+                    TellRawAll(json) => {
                         // TODO: handle error
                         let _ = mc_server_internal
                             .write_to_stdin(format!("tellraw @a {}\n", json))

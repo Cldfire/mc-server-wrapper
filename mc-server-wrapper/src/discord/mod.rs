@@ -1,26 +1,28 @@
-use log::{info, warn};
+use log::{debug, info, warn};
 
 use twilight::{
     command_parser::{Command, CommandParserConfig, Parser},
     gateway::shard::Event,
     gateway::{Cluster, ClusterConfig},
     http::Client as DiscordClient,
-    model::channel::message::MessageType,
+    model::channel::{message::MessageType, Message},
     model::gateway::GatewayIntents,
     model::id::ChannelId,
 };
 
 use mc_server_wrapper_lib::communication::*;
 use mc_server_wrapper_lib::parse::*;
-use minecraft_chat::{Color, MessageBuilder, Payload};
+use minecraft_chat::{Color, Payload};
 
-use util::format_online_players;
+use util::{format_online_players, tellraw_prefix};
 
 use crate::error::*;
 use crate::ONLINE_PLAYERS;
 use tokio::{stream::StreamExt, sync::mpsc::Sender};
 
 pub mod util;
+
+static CHAT_PREFIX: &str = "[D] ";
 
 /// Sets up a `DiscordBridge` and starts handling events
 pub async fn setup_discord(
@@ -37,19 +39,19 @@ pub async fn setup_discord(
 
         // For all received Discord events, map the event to a `ServerCommand`
         // (if necessary) and send it to the Minecraft server
+        // TODO: don't unwrap here
         let mut events = discord.cluster().unwrap().events().await;
         while let Some(e) = events.next().await {
             let discord = discord.clone();
-            let mut cmd_sender_clone = mc_cmd_sender.clone();
+            let cmd_sender_clone = mc_cmd_sender.clone();
             let cmd_parser_clone = cmd_parser.clone();
 
             tokio::spawn(async move {
-                match discord.handle_discord_event(e, cmd_parser_clone).await {
-                    Ok(Some(cmd)) => {
-                        cmd_sender_clone.send(cmd).await.ok();
-                    }
-                    Err(e) => warn!("Failed to handle Discord event: {:?}", e),
-                    _ => {}
+                if let Err(e) = discord
+                    .handle_discord_event(e, cmd_parser_clone, cmd_sender_clone)
+                    .await
+                {
+                    warn!("Failed to handle Discord event: {:?}", e);
                 }
             });
         }
@@ -119,24 +121,20 @@ impl DiscordBridge {
 
     /// Handle an event from Discord
     ///
-    /// The event can optionally be mapped to a command to be sent to a Minecraft
-    /// server.
-    ///
     /// The provided `cmd_parser` is used to parse commands (not `ServerCommands`)
     /// from Discord messages.
     pub async fn handle_discord_event<'a>(
         &self,
         event: (u64, Event),
         cmd_parser: Parser<'a>,
-    ) -> Result<Option<ServerCommand>, Error> {
-        match event {
+        mut mc_cmd_sender: Sender<ServerCommand>,
+    ) -> Result<(), Error> {
+        Ok(match event {
             (_, Event::Ready(_)) => {
                 info!("Discord bridge online");
-                Ok(None)
             }
             (_, Event::GuildCreate(guild)) => {
                 info!("Connected to guild {}", guild.name);
-                Ok(None)
             }
             (_, Event::MessageCreate(msg)) => {
                 if msg.kind == MessageType::Regular
@@ -156,35 +154,83 @@ impl DiscordBridge {
                             _ => {}
                         }
 
-                        return Ok(None);
+                        return Ok(());
                     }
 
-                    let tellraw_msg = MessageBuilder::builder(Payload::text("[D] "))
-                        .bold(true)
-                        .color(Color::LightPurple)
+                    self.handle_attachments_in_msg(&msg, mc_cmd_sender.clone())
+                        .await;
+
+                    // We don't need to do anything for empty messages
+                    if msg.content.is_empty() {
+                        debug!("Empty message from Discord: {:?}", &msg);
+                        return Ok(());
+                    }
+
+                    let tellraw_msg = tellraw_prefix()
                         .then(Payload::text(&format!(
                             "<{}> {}",
                             &msg.author.name, &msg.content
                         )))
-                        .bold(false)
-                        .color(Color::White)
                         .build();
 
-                    // TODO: This will not add the message to the server logs
-                    println!(
-                        "{}",
-                        ConsoleMsg::new(
-                            ConsoleMsgType::Info,
-                            format!("[D] <{}> {}", &msg.author.name, &msg.content)
-                        )
-                    );
+                    // Tellraw commands do not get logged to the console
+                    ConsoleMsg::new(
+                        ConsoleMsgType::Info,
+                        format!("{}<{}> {}", CHAT_PREFIX, &msg.author.name, &msg.content),
+                    )
+                    .log();
 
-                    Ok(Some(ServerCommand::TellRaw(tellraw_msg.to_json().unwrap())))
-                } else {
-                    Ok(None)
+                    mc_cmd_sender
+                        .send(ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()))
+                        .await
+                        .ok();
                 }
             }
-            _ => Ok(None),
+            _ => {}
+        })
+    }
+
+    /// Handles any attachments in the given message
+    pub async fn handle_attachments_in_msg(
+        &self,
+        msg: &Message,
+        mut mc_cmd_sender: Sender<ServerCommand>,
+    ) {
+        for attachment in &msg.attachments {
+            let type_str = if attachment.height.is_some() {
+                "image"
+            } else {
+                "file"
+            };
+
+            let tellraw_msg = tellraw_prefix()
+                .then(Payload::text(&format!("{} uploaded ", &msg.author.name)))
+                .italic(true)
+                .color(Color::Gray)
+                .then(Payload::text(type_str))
+                .underlined(true)
+                .italic(true)
+                .color(Color::Gray)
+                .hover_show_text(&format!(
+                    "Click to open the {} in your web browser",
+                    type_str
+                ))
+                .click_open_url(&attachment.url)
+                .build();
+
+            ConsoleMsg::new(
+                ConsoleMsgType::Info,
+                format!(
+                    "{}{} uploaded {}: {}",
+                    CHAT_PREFIX, &msg.author.name, type_str, attachment.url
+                ),
+            )
+            .log();
+
+            mc_cmd_sender
+                .send(ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()))
+                .await
+                .ok();
         }
     }
 

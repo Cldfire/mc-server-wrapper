@@ -45,7 +45,7 @@ pub enum ServerCommand {
     ///
     /// Message should be JSON of the following format:
     /// https://minecraft.gamepedia.com/Raw_JSON_text_format
-    TellRaw(String),
+    TellRawAll(String),
     /// Write the given string to the server's stdin as a command
     ///
     /// This means that the given string will have "\n" appended to it

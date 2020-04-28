@@ -1,4 +1,16 @@
+use super::CHAT_PREFIX;
+use minecraft_chat::*;
 use std::collections::HashSet;
+
+/// Returns a `MessageBuilder` with a nice prefix for Discord messages in Minecraft
+pub fn tellraw_prefix() -> MessageBuilder {
+    // Setting styles on the first payload sets them for all future payloads
+    // just fyi
+    MessageBuilder::builder(Payload::text(""))
+        .then(Payload::text(CHAT_PREFIX))
+        .bold(true)
+        .color(Color::LightPurple)
+}
 
 /// Utility function to return a neatly formatted string describing who's playing
 /// Minecraft
