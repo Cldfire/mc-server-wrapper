@@ -111,21 +111,45 @@ impl McServer {
     pub fn new(config: McServerConfig) -> Result<Self, McServerConfigError> {
         let config = config.validate()?;
 
-        let (cmd_sender, mut cmd_receiver) = mpsc::channel::<ServerCommand>(64);
+        let (cmd_sender, cmd_receiver) = mpsc::channel::<ServerCommand>(64);
         let (event_sender, event_receiver) = mpsc::channel::<ServerEvent>(64);
-        let mc_server_internal = Arc::new(McServerInternal {
-            config,
+
+        Arc::new(McServerInternal {
+            config: config,
             event_sender,
             mc_stdin: Arc::new(Mutex::new(None)),
-        });
+        })
+        .spawn_listener(cmd_receiver);
 
-        // Start a task to receive server commands and handle them appropriately
-        // TODO: move this out of this function
+        Ok(McServer {
+            cmd_sender,
+            event_receiver,
+        })
+    }
+}
+
+// Groups together stuff needed internally by the library
+#[derive(Debug)]
+struct McServerInternal {
+    /// Configuration for this server instance
+    // TODO: support editing this config while server is running
+    config: McServerConfig,
+    /// Channel through which we send events
+    event_sender: mpsc::Sender<ServerEvent>,
+    /// Handle to the server's stdin if it's running
+    mc_stdin: Arc<Mutex<Option<process::ChildStdin>>>,
+}
+
+impl McServerInternal {
+    /// Spawn a task to listen for and handle incoming `ServerCommand`s
+    // TODO: if we're smarter about method boundaries we could get rid of the
+    // `Arc<Self>` and have the `cmd_receiver` as a field of the struct
+    pub fn spawn_listener(self: Arc<Self>, mut cmd_receiver: mpsc::Receiver<ServerCommand>) {
         tokio::spawn(async move {
             while let Some(cmd) = cmd_receiver.next().await {
                 use ServerCommand::*;
                 use ServerEvent::*;
-                let mc_server_internal = mc_server_internal.clone();
+                let mc_server_internal = self.clone();
 
                 match cmd {
                     TellRawAll(json) => {
@@ -181,27 +205,8 @@ impl McServer {
                 }
             }
         });
-
-        Ok(McServer {
-            cmd_sender,
-            event_receiver,
-        })
     }
-}
 
-// Groups together stuff needed internally by the library
-#[derive(Debug)]
-struct McServerInternal {
-    /// Configuration for this server instance
-    // TODO: support editing this config while server is running
-    config: McServerConfig,
-    /// Channel through which we send events
-    event_sender: mpsc::Sender<ServerEvent>,
-    /// Handle to the server's stdin if it's running
-    mc_stdin: Arc<Mutex<Option<process::ChildStdin>>>,
-}
-
-impl McServerInternal {
     /// Run a minecraft server.
     // TODO: write better docs
     // TODO: maybe split into functions that start the server and interface
