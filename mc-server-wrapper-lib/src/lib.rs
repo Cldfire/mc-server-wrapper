@@ -144,7 +144,7 @@ impl McServerInternal {
     /// Spawn a task to listen for and handle incoming `ServerCommand`s
     // TODO: if we're smarter about method boundaries we could get rid of the
     // `Arc<Self>` and have the `cmd_receiver` as a field of the struct
-    pub fn spawn_listener(self: Arc<Self>, mut cmd_receiver: mpsc::Receiver<ServerCommand>) {
+    fn spawn_listener(self: Arc<Self>, mut cmd_receiver: mpsc::Receiver<ServerCommand>) {
         tokio::spawn(async move {
             while let Some(cmd) = cmd_receiver.next().await {
                 use ServerCommand::*;

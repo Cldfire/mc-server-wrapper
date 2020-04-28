@@ -68,7 +68,9 @@ async fn main() {
                 } else {
                     match process_result {
                         Ok(exit_status) => {
-                            println!("Minecraft server process finished with {}", exit_status)
+                            if !exit_status.success() {
+                                eprintln!("Minecraft server process finished with {}", exit_status)
+                            }
                         }
                         Err(e) => eprintln!("Minecraft server process finished with error: {}", e),
                     }

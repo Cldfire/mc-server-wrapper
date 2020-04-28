@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/Cldfire/mc-server-wrapper/workflows/CI/badge.svg)
 
-Lightweight Rust program to run a Java Minecraft server (vanilla, Spigot, or PaperSpigot), providing niceties such as a Discord chat bridge, server restart-on-crash, and improved console output.
+Lightweight Rust program to manage a Java Minecraft server process (vanilla, Spigot, or PaperSpigot), providing niceties such as a Discord chat bridge, server restart-on-crash, and improved console output.
 
 Not production-ready, but getting there. Feel free to use it for non-critical servers, and please report issues!
 
@@ -46,3 +46,18 @@ The binary for this project is built on top of a library; if you want to impleme
 ```
 cargo run --example basic -- path/to/server.jar
 ```
+
+#### License
+
+<sup>
+Licensed under either of <a href="LICENSE-APACHE">Apache License, Version
+2.0</a> or <a href="LICENSE-MIT">MIT license</a> at your option.
+</sup>
+
+<br>
+
+<sub>
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this crate by you, as defined in the Apache-2.0 license, shall
+be dual licensed as above, without any additional terms or conditions.
+</sub>

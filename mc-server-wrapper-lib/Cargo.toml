@@ -1,6 +1,7 @@
 [package]
 name = "mc-server-wrapper-lib"
 version = "0.1.0"
+license = "MIT OR Apache-2.0"
 authors = ["Cldfire"]
 edition = "2018"
 
