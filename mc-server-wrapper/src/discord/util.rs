@@ -1,6 +1,8 @@
 use super::CHAT_PREFIX;
-use minecraft_chat::*;
-use std::collections::HashSet;
+use log::warn;
+use minecraft_chat::{Color, MessageBuilder, Payload};
+use std::collections::{HashMap, HashSet};
+use twilight::model::id::{RoleId, UserId};
 
 /// Returns a `MessageBuilder` with a nice prefix for Discord messages in Minecraft
 pub fn tellraw_prefix() -> MessageBuilder {
@@ -10,6 +12,148 @@ pub fn tellraw_prefix() -> MessageBuilder {
         .then(Payload::text(CHAT_PREFIX))
         .bold(true)
         .color(Color::LightPurple)
+}
+
+/// Formats mentions in the given content using the given info
+///
+/// `mentions` maps mentioned user IDs to their names
+// TODO: should fuzz this
+// TODO: this code is complicated, explore strategies to simplify?
+// TODO: does not handle escaped mentions (but this is a SUPER edge case and
+// the Discord client doesn't even handle those right either)
+pub fn format_mentions_in<S: Into<String>>(
+    content: S,
+    mentions: HashMap<&UserId, &str>,
+    mention_roles: &Vec<RoleId>,
+) -> String {
+    enum MentionType {
+        User,
+        Channel,
+        Role,
+        Unknown,
+    }
+    let mut content = content.into();
+    // We can't do anything useful without info about mentions
+    if mentions.is_empty() && mention_roles.is_empty() {
+        return content;
+    }
+
+    let mut content_slice = &content.clone()[..];
+    while let Some(idx) = content_slice.find('<') {
+        let mut mention_type = MentionType::Unknown;
+        let mut possible_id = "";
+        let mut closing_angle_idx = None;
+
+        // Grabs the stuff between the start of a possible mention and the next
+        // closing bracket
+        let mut possible_id_after = |forward_idx: usize| {
+            closing_angle_idx = if let Some(forward_slice) = content_slice.get(forward_idx..) {
+                // We need to make sure we only look for a closing bracket after
+                // the "mention-beginning" stuff we found, and not from the start
+                // of the entire slice (there could be a closing bracket in front
+                // of the "mention-beginning" stuff which is not what we would want
+                // to find)
+                //
+                // If we do find an index to a closing bracket, we need to add
+                // `forward_idx` to it since we are then using the found index
+                // in the original slice
+                forward_slice.find('>').map(|n| n + forward_idx)
+            } else {
+                None
+            };
+
+            if let Some(closing_angle_idx) = closing_angle_idx {
+                possible_id = &content_slice[forward_idx..closing_angle_idx];
+            }
+        };
+
+        // Check if this could be a mention
+        if let Some(slice) = content_slice.get(idx..idx + 3) {
+            if slice.starts_with("<@!") {
+                mention_type = MentionType::User;
+                possible_id_after(idx + 3);
+            } else if slice.starts_with("<@") {
+                // As far as I know it is correct to treat this as a user mention
+                // TODO: once `strip_prefix` is stable, merge with the above branch?
+                mention_type = MentionType::User;
+                possible_id_after(idx + 2);
+            } else if slice.starts_with("<@&") {
+                mention_type = MentionType::Role;
+                possible_id_after(idx + 3);
+            } else if slice.starts_with("<#") {
+                mention_type = MentionType::Channel;
+                possible_id_after(idx + 2);
+            }
+        }
+
+        // If it is a mention, replace it
+        if let Ok(id) = possible_id.parse::<u64>() {
+            let mut replace_mention = |with: &str| {
+                let idx_diff = content.len() - content_slice.len();
+                content.replace_range(
+                    // `idx` is relative to the slice into the original string
+                    // that we are adjusting the start of to proceed through
+                    // the string
+                    //
+                    // in order to index back into the original string we have
+                    // to offset the indices
+                    idx + idx_diff..=closing_angle_idx.unwrap() + idx_diff,
+                    with,
+                );
+            };
+
+            match mention_type {
+                MentionType::User => {
+                    if let Some(name) = mentions
+                        .iter()
+                        .find(|(user_id, _)| id == user_id.0)
+                        .map(|(_, name)| name)
+                    {
+                        replace_mention(&format!("@{}", name));
+                    }
+                }
+                MentionType::Channel => {
+                    // TODO: this doesn't work because the `mention_channels` field doesn't
+                    // get sent 99% of the time
+                    //
+                    // will need to use cache for this as well
+
+                    // if let Some(channel) = msg.mention_channels.iter().find(|c| id == c.id.0) {
+                    //     replace_mention(&format!("#{}", channel.name));
+                    // }
+                }
+                MentionType::Role => {
+                    if let Some(_role_id) = mention_roles.iter().find(|r| id == r.0) {
+                        // TODO: need to set up caching so we can get a role name
+                        // from the id here
+                    }
+                }
+                MentionType::Unknown => {
+                    warn!(
+                        "Encountered unknown mention type in Discord message: {}",
+                        &content
+                    );
+                }
+            }
+        }
+
+        content_slice = if let Some(end_idx) = closing_angle_idx {
+            // If we found a closing angle bracket, either we found and handled a
+            // mention in between or there was no valid mention in between. In
+            // either case we can safely skip to it
+            &content_slice[end_idx..]
+        } else {
+            // We didn't find a closing angle bracket, so we can't do anything
+            // except skip to the next character (if one exists)
+            if let Some(more) = content_slice.get(idx + 1..) {
+                more
+            } else {
+                ""
+            }
+        };
+    }
+
+    content
 }
 
 /// Utility function to return a neatly formatted string describing who's playing
@@ -82,6 +226,95 @@ mod test {
     fn sanitize_markdown() {
         let testcase = "~*`cdawg_m`>";
         assert_eq!(sanitize_for_markdown(testcase), "\\~\\*\\`cdawg\\_m\\`\\>");
+    }
+
+    mod content_format_mentions {
+        use super::super::format_mentions_in;
+        use std::collections::HashMap;
+        use twilight::model::id::UserId;
+
+        #[test]
+        fn blank_message() {
+            let msg = "";
+            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+
+            assert_eq!(formatted, "");
+        }
+
+        #[test]
+        fn fake_mention() {
+            let msg = "the upcoming bracket <@thing is not a mention";
+            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+
+            assert_eq!(formatted, msg);
+        }
+
+        #[test]
+        fn closing_bracket_then_start_mention() {
+            let msg = "><@!kksdk";
+            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+
+            assert_eq!(formatted, msg);
+        }
+
+        #[test]
+        fn fake_mention_crazy() {
+            let msg = "<<><><@!><#><>#<>>>>";
+            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+
+            assert_eq!(formatted, msg);
+        }
+
+        #[test]
+        fn fake_mention_bad_id() {
+            let msg = "<@!12notanumber>";
+            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+
+            assert_eq!(formatted, msg);
+        }
+
+        #[test]
+        fn one_mention_no_info() {
+            let msg = "this has a mention: <@123>, but we're not passing mentions";
+            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+
+            assert_eq!(formatted, msg);
+        }
+
+        #[test]
+        fn one_mention_with_info() {
+            let msg = "this has a mention: <@123>, and we are passing mentions";
+            let mut mentions = HashMap::new();
+            mentions.insert(&UserId(123), "TestName");
+
+            let formatted = format_mentions_in(msg, mentions, &vec![]);
+            assert_eq!(
+                formatted,
+                "this has a mention: @TestName, and we are passing mentions"
+            );
+        }
+
+        #[test]
+        fn two_mentions_with_info() {
+            let msg = "<@123>, and even <@!321>!";
+            let mut mentions = HashMap::new();
+            mentions.insert(&UserId(123), "TestName");
+            mentions.insert(&UserId(321), "AnotherTest");
+
+            let formatted = format_mentions_in(msg, mentions, &vec![]);
+            assert_eq!(formatted, "@TestName, and even @AnotherTest!");
+        }
+
+        #[test]
+        fn three_mentions_some_with_info() {
+            let msg = "<@123>, and even <@!321>, and wow: <@3234>";
+            let mut mentions = HashMap::new();
+            mentions.insert(&UserId(123), "TestName");
+            mentions.insert(&UserId(3234), "WowTest");
+
+            let formatted = format_mentions_in(msg, mentions, &vec![]);
+            assert_eq!(formatted, "@TestName, and even <@!321>, and wow: @WowTest");
+        }
     }
 
     mod format_online_players {

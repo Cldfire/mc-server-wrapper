@@ -14,7 +14,7 @@ use mc_server_wrapper_lib::communication::*;
 use mc_server_wrapper_lib::parse::*;
 use minecraft_chat::{Color, Payload};
 
-use util::{format_online_players, tellraw_prefix};
+use util::{format_mentions_in, format_online_players, tellraw_prefix};
 
 use crate::error::*;
 use crate::ONLINE_PLAYERS;
@@ -127,7 +127,7 @@ impl DiscordBridge {
         &self,
         event: (u64, Event),
         cmd_parser: Parser<'a>,
-        mut mc_cmd_sender: Sender<ServerCommand>,
+        mc_cmd_sender: Sender<ServerCommand>,
     ) -> Result<(), Error> {
         Ok(match event {
             (_, Event::Ready(_)) => {
@@ -160,31 +160,7 @@ impl DiscordBridge {
                     self.handle_attachments_in_msg(&msg, mc_cmd_sender.clone())
                         .await;
 
-                    // We don't need to do anything past this point for empty messages
-                    if msg.content.is_empty() {
-                        debug!("Empty message from Discord: {:?}", &msg);
-                        return Ok(());
-                    }
-
-                    let tellraw_msg = tellraw_prefix()
-                        .then(Payload::text(&format!(
-                            "<{}> {}",
-                            &msg.author.name, &msg.content
-                        )))
-                        .build();
-
-                    // Tellraw commands do not get logged to the console, so we
-                    // make up for that here
-                    ConsoleMsg::new(
-                        ConsoleMsgType::Info,
-                        format!("{}<{}> {}", CHAT_PREFIX, &msg.author.name, &msg.content),
-                    )
-                    .log();
-
-                    mc_cmd_sender
-                        .send(ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()))
-                        .await
-                        .ok();
+                    self.handle_msg_content(&msg, mc_cmd_sender.clone()).await;
 
                     // We handle embeds after the message contents to replicate
                     // Discord's layout (embeds after message)
@@ -196,7 +172,7 @@ impl DiscordBridge {
     }
 
     /// Handles any attachments in the given message
-    pub async fn handle_attachments_in_msg(
+    async fn handle_attachments_in_msg(
         &self,
         msg: &Message,
         mut mc_cmd_sender: Sender<ServerCommand>,
@@ -239,12 +215,45 @@ impl DiscordBridge {
         }
     }
 
+    /// Handles the content of the message
+    async fn handle_msg_content(&self, msg: &Message, mut mc_cmd_sender: Sender<ServerCommand>) {
+        if msg.content.is_empty() {
+            debug!("Empty message from Discord: {:?}", &msg);
+            return;
+        }
+
+        let content = format_mentions_in(
+            msg.content.clone(),
+            msg.mentions
+                .iter()
+                .map(|(id, user)| (id, user.name.as_str()))
+                .collect(),
+            &msg.mention_roles,
+        );
+
+        let tellraw_msg = tellraw_prefix()
+            .then(Payload::text(&format!(
+                "<{}> {}",
+                &msg.author.name, &content
+            )))
+            .build();
+
+        // Tellraw commands do not get logged to the console, so we
+        // make up for that here
+        ConsoleMsg::new(
+            ConsoleMsgType::Info,
+            format!("{}<{}> {}", CHAT_PREFIX, &msg.author.name, &content),
+        )
+        .log();
+
+        mc_cmd_sender
+            .send(ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()))
+            .await
+            .ok();
+    }
+
     /// Handles any embeds in the given message
-    pub async fn handle_embeds_in_msg(
-        &self,
-        msg: &Message,
-        mut mc_cmd_sender: Sender<ServerCommand>,
-    ) {
+    async fn handle_embeds_in_msg(&self, msg: &Message, mut mc_cmd_sender: Sender<ServerCommand>) {
         for embed in msg.embeds.iter().filter(|e| e.url.is_some()) {
             // TODO: this is kinda ugly
             let link_text = if embed.title.is_some() && embed.provider.is_some() {
