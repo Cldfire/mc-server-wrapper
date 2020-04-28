@@ -2,6 +2,7 @@ use tokio::fs::File;
 use tokio::io::BufReader;
 use tokio::prelude::*;
 use tokio::process;
+use tokio::process::ChildStdin;
 use tokio::stream::StreamExt;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
@@ -118,6 +119,7 @@ impl McServer {
             config: config,
             event_sender,
             mc_stdin: Arc::new(Mutex::new(None)),
+            running: Mutex::new(false),
         })
         .spawn_listener(cmd_receiver);
 
@@ -136,8 +138,10 @@ struct McServerInternal {
     config: McServerConfig,
     /// Channel through which we send events
     event_sender: mpsc::Sender<ServerEvent>,
-    /// Handle to the server's stdin if it's running
+    /// Handle to the server's stdin if it's running and stdin is being piped
     mc_stdin: Arc<Mutex<Option<process::ChildStdin>>>,
+    /// Whether or not the server is currently running
+    running: Mutex<bool>,
 }
 
 impl McServerInternal {
@@ -178,7 +182,7 @@ impl McServerInternal {
                         });
                     }
                     StartServer => {
-                        if mc_server_internal.server_running().await {
+                        if mc_server_internal.running().await {
                             continue;
                         }
 
@@ -244,14 +248,10 @@ impl McServerInternal {
             .spawn()
             .unwrap();
 
-        // Update the stored handle to the server's stdin
         if !self.config.inherit_stdin {
-            let mut mc_stdin = self.mc_stdin.lock().await;
-            if mc_stdin.is_some() {
-                unreachable!()
-            };
-            *mc_stdin = Some(process.stdin.take().unwrap());
+            self.set_stdin(Some(process.stdin.take().unwrap())).await;
         }
+        self.set_running(true).await;
 
         let mut stdout = BufReader::new(process.stdout.take().unwrap()).lines();
         let mut stderr = BufReader::new(process.stderr.take().unwrap()).lines();
@@ -304,22 +304,30 @@ impl McServerInternal {
 
         let (status, stdout_val, _) = tokio::join!(status_handle, stdout_handle, stderr_handle,);
 
-        // Update the stored handle to the server's stdin
         if !self.config.inherit_stdin {
-            let mut mc_stdin = self.mc_stdin.lock().await;
-            if mc_stdin.is_none() {
-                unreachable!()
-            };
-            *mc_stdin = None;
+            self.set_stdin(None).await;
         }
+        self.set_running(false).await;
 
         (status.unwrap(), stdout_val.unwrap())
     }
 
+    /// Set the stdin handle
+    async fn set_stdin(&self, to: Option<ChildStdin>) {
+        let mut mc_stdin = self.mc_stdin.lock().await;
+        *mc_stdin = to;
+    }
+
+    /// Set the value of `running`
+    async fn set_running(&self, to: bool) {
+        let mut running = self.running.lock().await;
+        *running = to;
+    }
+
     /// Returns true if the server is currently running
-    async fn server_running(&self) -> bool {
-        let mc_stdin = self.mc_stdin.lock().await;
-        mc_stdin.is_some()
+    async fn running(&self) -> bool {
+        let running = self.running.lock().await;
+        *running
     }
 
     /// Writes the given bytes to the server's stdin if the server is running
