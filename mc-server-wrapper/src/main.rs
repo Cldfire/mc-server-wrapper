@@ -4,6 +4,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use anyhow::anyhow;
+use anyhow::Context;
+
 use tokio::io::BufReader;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
@@ -22,14 +25,12 @@ use log::*;
 
 use crate::discord::util::{format_online_players, sanitize_for_markdown};
 use crate::discord::*;
-use crate::error::*;
 use dotenv::dotenv;
 use indicatif::{ProgressBar, ProgressStyle};
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 mod discord;
-mod error;
 mod logging;
 
 /// Maintains a hashset of players currently on the Minecraft server
@@ -83,13 +84,13 @@ pub struct Opt {
     jvm_flags: Option<String>,
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> anyhow::Result<()> {
     let mut rt = Runtime::new().unwrap();
     CONSOLE_MSG_LOG_TARGET.set("mc").unwrap();
     ONLINE_PLAYERS.set(Mutex::new(HashSet::new())).unwrap();
 
     // TODO: use proc macro instead if shutdown_timeout no longer needed
-    rt.block_on(async {
+    let res = rt.block_on(async {
         dotenv().ok();
         let opt = Opt::from_args();
 
@@ -98,7 +99,7 @@ fn main() -> Result<(), Error> {
             opt.log_level_all,
             opt.log_level_self,
             opt.log_level_discord
-        ).unwrap();
+        ).with_context(|| "Failed to set up logging")?;
 
         let mc_config = McServerConfig::new(
             opt.server_path.clone(),
@@ -107,26 +108,26 @@ fn main() -> Result<(), Error> {
             false
         );
         // TODO: don't expect here
-        let mut mc_server = McServer::new(mc_config).expect("minecraft server config was not valid");
+        let mut mc_server = McServer::new(mc_config)?;
 
         let discord = if opt.bridge_to_discord {
             if opt.discord_channel_id.is_none() {
-                error!("Discord bridge was enabled but a channel ID to bridge to \
-                        was not provided.");
-                return;
+                return Err(anyhow!(
+                    "Discord bridge was enabled but a channel ID to bridge to was not provided"
+                ));
             }
 
             if opt.discord_token.is_none() {
-                error!("Discord bridge was enabled but an API token for a Discord \
-                        bot was not provided.");
-                return;
+                return Err(anyhow!(
+                    "Discord bridge was enabled but an API token for a Discord bot was not provided"
+                ));
             }
 
             setup_discord(
                 opt.discord_token.unwrap(),
                 ChannelId(opt.discord_channel_id.unwrap()),
                 mc_server.cmd_sender.clone()
-            ).await.expect("Could not connect to Discord")
+            ).await.with_context(|| "Failed to connect to Discord")?
         } else {
             DiscordBridge::new_noop()
         };
@@ -275,9 +276,11 @@ fn main() -> Result<(), Error> {
 
         // TODO: need to await completion of this, otherwise it panics
         // discord.clone().set_channel_topic("Minecraft server is offline");
+
+        Ok(())
     });
 
     // TODO: we need this because the way tokio handles stdin involves blocking
     rt.shutdown_timeout(Duration::from_millis(5));
-    Ok(())
+    res
 }

@@ -17,6 +17,7 @@ log = "0.4"
 fern = { version = "0.6", features = ["colored"] }
 chrono = "0.4"
 once_cell = "1.3"
+anyhow = "1.0"
 
 [dev-dependencies]
 rusty-hook = "^0.11.1"

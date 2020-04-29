@@ -16,7 +16,6 @@ use minecraft_chat::{Color, Payload};
 
 use util::{format_mentions_in, format_online_players, tellraw_prefix};
 
-use crate::error::*;
 use crate::ONLINE_PLAYERS;
 use tokio::{stream::StreamExt, sync::mpsc::Sender};
 
@@ -29,7 +28,7 @@ pub async fn setup_discord(
     token: String,
     bridge_channel_id: ChannelId,
     mc_cmd_sender: Sender<ServerCommand>,
-) -> Result<DiscordBridge, Error> {
+) -> anyhow::Result<DiscordBridge> {
     let discord = DiscordBridge::new(token, bridge_channel_id).await?;
 
     let discord_clone = discord.clone();
@@ -76,7 +75,7 @@ pub struct DiscordBridge {
 
 impl DiscordBridge {
     /// Connects to Discord with the given `token` and `bridge_channel_id`
-    pub async fn new(token: String, bridge_channel_id: ChannelId) -> Result<Self, Error> {
+    pub async fn new(token: String, bridge_channel_id: ChannelId) -> anyhow::Result<Self> {
         let client = DiscordClient::new(&token);
         let cluster_config = ClusterConfig::builder(&token)
             .intents(Some(
@@ -128,7 +127,7 @@ impl DiscordBridge {
         event: (u64, Event),
         cmd_parser: Parser<'a>,
         mc_cmd_sender: Sender<ServerCommand>,
-    ) -> Result<(), Error> {
+    ) -> anyhow::Result<()> {
         Ok(match event {
             (_, Event::Ready(_)) => {
                 info!("Discord bridge online");
