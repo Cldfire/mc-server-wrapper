@@ -1,14 +1,15 @@
 use mc_server_wrapper_lib::CONSOLE_MSG_LOG_TARGET;
 use std::path::Path;
+use tokio::sync::mpsc::Sender;
+use tui::widgets::Text;
 
 pub fn setup_logger<P: AsRef<Path>>(
     logfile_path: P,
+    log_sender: Sender<Text<'static>>,
     log_level_all: log::Level,
     log_level_self: log::Level,
     log_level_discord: log::Level,
 ) -> Result<(), fern::InitError> {
-    let colors = fern::colors::ColoredLevelConfig::new();
-
     let file_logger = fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -40,16 +41,7 @@ pub fn setup_logger<P: AsRef<Path>>(
         )
         .chain(fern::log_file(logfile_path)?);
 
-    let stdout_logger = fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "[{}] [{}, {}]: {}",
-                chrono::Local::now().format("%-I:%M:%S %p"),
-                record.target(),
-                colors.color(record.level()),
-                message
-            ))
-        })
+    let tui_logger = fern::Dispatch::new()
         .level(log::LevelFilter::Error)
         .level_for("twilight_http", log::LevelFilter::Warn)
         .level_for("twilight_gateway", log::LevelFilter::Warn)
@@ -63,10 +55,25 @@ pub fn setup_logger<P: AsRef<Path>>(
             *CONSOLE_MSG_LOG_TARGET.get().unwrap(),
             log::LevelFilter::Info,
         )
-        .chain(std::io::stdout());
+        .chain(fern::Output::call(move |record| {
+            // TODO: shouldn't send as Text
+            let text = Text::raw(format!(
+                "[{}] [{}, {}]: {}",
+                chrono::Local::now().format("%-I:%M:%S %p"),
+                record.target(),
+                record.level(),
+                record.args()
+            ))
+            .to_owned();
+
+            let mut log_sender_clone = log_sender.clone();
+            tokio::spawn(async move {
+                let _ = log_sender_clone.send(text).await;
+            });
+        }));
 
     fern::Dispatch::new()
-        .chain(stdout_logger)
+        .chain(tui_logger)
         .chain(file_logger)
         .apply()?;
 

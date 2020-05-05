@@ -128,7 +128,7 @@ impl DiscordBridge {
         cmd_parser: Parser<'a>,
         mc_cmd_sender: Sender<ServerCommand>,
     ) -> anyhow::Result<()> {
-        Ok(match event {
+        match event {
             (_, Event::Ready(_)) => {
                 info!("Discord bridge online");
             }
@@ -167,7 +167,9 @@ impl DiscordBridge {
                 }
             }
             _ => {}
-        })
+        }
+
+        Ok(())
     }
 
     /// Handles any attachments in the given message

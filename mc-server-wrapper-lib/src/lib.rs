@@ -85,7 +85,7 @@ impl McServerConfig {
         use McServerConfigError::*;
 
         if !self.server_path.is_file() {
-            Err(ServerPathFileNotPresent(self.server_path.clone()))
+            Err(ServerPathFileNotPresent(self.server_path))
         } else {
             Ok(self)
         }
@@ -116,7 +116,7 @@ impl McServer {
         let (event_sender, event_receiver) = mpsc::channel::<ServerEvent>(64);
 
         Arc::new(McServerInternal {
-            config: config,
+            config,
             event_sender,
             mc_stdin: Arc::new(Mutex::new(None)),
             running: Mutex::new(false),

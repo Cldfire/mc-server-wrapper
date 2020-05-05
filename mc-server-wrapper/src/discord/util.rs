@@ -22,7 +22,7 @@ pub fn tellraw_prefix() -> MessageBuilder {
 pub fn format_mentions_in<S: Into<String>>(
     content: S,
     mentions: HashMap<&UserId, &str>,
-    mention_roles: &Vec<RoleId>,
+    mention_roles: &[RoleId],
 ) -> String {
     enum MentionType {
         User,
