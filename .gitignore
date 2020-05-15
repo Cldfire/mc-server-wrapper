@@ -3,3 +3,4 @@
 /test-server
 .ds_store
 .env
+.vscode

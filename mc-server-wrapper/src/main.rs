@@ -97,6 +97,7 @@ pub struct Opt {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    log_panics::init();
     dotenv().ok();
     CONSOLE_MSG_LOG_TARGET.set("mc").unwrap();
     ONLINE_PLAYERS.set(Mutex::new(HashSet::new())).unwrap();
@@ -128,6 +129,7 @@ async fn main() -> anyhow::Result<()> {
     // TODO: don't expect here
     let mut mc_server = McServer::new(mc_config)?;
 
+    // TODO: start drawing UI before setting up discord
     let discord = if opt.bridge_to_discord {
         if opt.discord_channel_id.is_none() {
             return Err(anyhow!(
@@ -151,6 +153,8 @@ async fn main() -> anyhow::Result<()> {
     } else {
         DiscordBridge::new_noop()
     };
+
+    // TODO: log what channel / guild we are bridging to using the cache
 
     mc_server
         .cmd_sender
@@ -258,6 +262,7 @@ async fn main() -> anyhow::Result<()> {
                                 // attempt to catch these cases by not restarting if the
                                 // server crashed twice within a small time window
                                 if last_start_time.elapsed().as_secs() < 60 {
+                                    // TODO: when an error is printed, wait for user input to exit the TUI
                                     error!("Fatal error believed to have been encountered, not restarting server");
                                     mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                                 } else {

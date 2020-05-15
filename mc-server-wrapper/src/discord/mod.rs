@@ -1,6 +1,10 @@
 use log::{debug, info, warn};
 
 use twilight::{
+    cache::{
+        twilight_cache_inmemory::config::{EventType, InMemoryConfigBuilder},
+        InMemoryCache,
+    },
     command_parser::{Command, CommandParserConfig, Parser},
     gateway::shard::Event,
     gateway::{Cluster, ClusterConfig},
@@ -45,12 +49,16 @@ pub async fn setup_discord(
             let cmd_sender_clone = mc_cmd_sender.clone();
             let cmd_parser_clone = cmd_parser.clone();
 
+            if let Err(e) = discord.inner.as_ref().unwrap().cache.update(&e.1).await {
+                warn!("Failed to update Discord cache: {}", e);
+            }
+
             tokio::spawn(async move {
                 if let Err(e) = discord
                     .handle_discord_event(e, cmd_parser_clone, cmd_sender_clone)
                     .await
                 {
-                    warn!("Failed to handle Discord event: {:?}", e);
+                    warn!("Failed to handle Discord event: {}", e);
                 }
             });
         }
@@ -67,10 +75,19 @@ pub async fn setup_discord(
 /// This struct can be cloned and passed around as needed.
 #[derive(Debug, Clone)]
 pub struct DiscordBridge {
-    client: Option<DiscordClient>,
-    cluster: Option<Cluster>,
+    inner: Option<DiscordBridgeInner>,
     /// The ID of the channel we're bridging to
     bridge_channel_id: ChannelId,
+}
+
+// Groups together optionally-present things
+//
+// Everything in here can be trivially cloned
+#[derive(Debug, Clone)]
+struct DiscordBridgeInner {
+    client: DiscordClient,
+    cluster: Cluster,
+    cache: InMemoryCache,
 }
 
 impl DiscordBridge {
@@ -85,9 +102,24 @@ impl DiscordBridge {
         let cluster = Cluster::new(cluster_config);
         cluster.up().await?;
 
+        let cache_config = InMemoryConfigBuilder::new()
+            .event_types(
+                EventType::GUILD_CREATE
+                    | EventType::GUILD_UPDATE
+                    | EventType::GUILD_DELETE
+                    | EventType::CHANNEL_CREATE
+                    | EventType::CHANNEL_UPDATE
+                    | EventType::CHANNEL_DELETE,
+            )
+            .build();
+        let cache = InMemoryCache::from(cache_config);
+
         Ok(Self {
-            client: Some(client),
-            cluster: Some(cluster),
+            inner: Some(DiscordBridgeInner {
+                client,
+                cluster,
+                cache,
+            }),
             bridge_channel_id,
         })
     }
@@ -95,15 +127,14 @@ impl DiscordBridge {
     /// Constructs an instance of this struct that does nothing
     pub fn new_noop() -> Self {
         Self {
-            client: None,
-            cluster: None,
+            inner: None,
             bridge_channel_id: ChannelId(0),
         }
     }
 
     /// Provides access to the `Cluster` inside this struct
-    pub fn cluster(&self) -> Option<&Cluster> {
-        self.cluster.as_ref()
+    pub fn cluster(&self) -> Option<Cluster> {
+        self.inner.as_ref().map(|i| i.cluster.clone())
     }
 
     /// Constructs a command parser for Discord commands
@@ -310,8 +341,9 @@ impl DiscordBridge {
     /// A new task is spawned to send the message
     pub fn send_channel_msg<T: Into<String> + Send + 'static>(self, text: T) {
         tokio::spawn(async move {
-            if let Some(client) = self.client {
-                if let Err(e) = client
+            if let Some(inner) = self.inner {
+                if let Err(e) = inner
+                    .client
                     .create_message(self.bridge_channel_id)
                     .content(text)
                     .await
@@ -325,11 +357,12 @@ impl DiscordBridge {
     /// Sets the topic of the channel being bridged to to `text`
     ///
     /// A new task is spawned to change the topic
-    // TODO: currently does not work, see https://github.com/twilight-rs/twilight/issues/149
+    // TODO: all of these functions need to expose a way to await their completion
     pub fn set_channel_topic<T: Into<String> + Send + 'static>(self, text: T) {
         tokio::spawn(async move {
-            if let Some(client) = self.client {
-                if let Err(e) = client
+            if let Some(inner) = self.inner {
+                if let Err(e) = inner
+                    .client
                     .update_channel(self.bridge_channel_id)
                     .topic(text)
                     .await
