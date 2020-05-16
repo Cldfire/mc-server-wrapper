@@ -1,23 +1,29 @@
-use tokio::fs::File;
-use tokio::io::BufReader;
-use tokio::prelude::*;
-use tokio::process;
-use tokio::process::ChildStdin;
-use tokio::stream::StreamExt;
-use tokio::sync::mpsc;
-use tokio::sync::Mutex;
+use tokio::{
+    fs::File,
+    io::BufReader,
+    prelude::*,
+    process,
+    process::ChildStdin,
+    stream::StreamExt,
+    sync::{mpsc, Mutex},
+};
 
 use thiserror::Error;
 
 use once_cell::sync::OnceCell;
 
-use std::io;
-use std::path::PathBuf;
-use std::process::{ExitStatus, Stdio};
-use std::{ffi::OsStr, sync::Arc};
+use std::{
+    ffi::OsStr,
+    io,
+    path::PathBuf,
+    process::{ExitStatus, Stdio},
+    sync::Arc,
+};
 
-use crate::communication::*;
-use crate::parse::{ConsoleMsg, ConsoleMsgSpecific};
+use crate::{
+    communication::*,
+    parse::{ConsoleMsg, ConsoleMsgSpecific},
+};
 
 pub mod communication;
 pub mod parse;

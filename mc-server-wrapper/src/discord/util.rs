@@ -3,7 +3,8 @@ use minecraft_chat::{Color, MessageBuilder, Payload};
 use std::collections::{HashMap, HashSet};
 use twilight::model::id::{RoleId, UserId};
 
-/// Returns a `MessageBuilder` with a nice prefix for Discord messages in Minecraft
+/// Returns a `MessageBuilder` with a nice prefix for Discord messages in
+/// Minecraft
 pub fn tellraw_prefix() -> MessageBuilder {
     // Setting styles on the first payload sets them for all future payloads
     // just fyi
@@ -111,19 +112,21 @@ pub fn format_mentions_in<S: Into<String>>(
                     }
                 }
                 MentionType::Channel => {
-                    // TODO: this doesn't work because the `mention_channels` field doesn't
-                    // get sent 99% of the time
+                    // TODO: this doesn't work because the `mention_channels`
+                    // field doesn't get sent 99% of the
+                    // time
                     //
                     // will need to use cache for this as well
 
-                    // if let Some(channel) = msg.mention_channels.iter().find(|c| id == c.id.0) {
+                    // if let Some(channel) =
+                    // msg.mention_channels.iter().find(|c| id == c.id.0) {
                     //     replace_mention(&format!("#{}", channel.name));
                     // }
                 }
                 MentionType::Role => {
                     if let Some(_role_id) = mention_roles.iter().find(|r| id == r.0) {
-                        // TODO: need to set up caching so we can get a role name
-                        // from the id here
+                        // TODO: need to set up caching so we can get a role
+                        // name from the id here
                     }
                 }
                 MentionType::Unknown => unreachable!(),
@@ -149,8 +152,8 @@ pub fn format_mentions_in<S: Into<String>>(
     content
 }
 
-/// Utility function to return a neatly formatted string describing who's playing
-/// Minecraft
+/// Utility function to return a neatly formatted string describing who's
+/// playing Minecraft
 ///
 /// `short` can be set to true to truncate the list.
 pub fn format_online_players(online_players: &HashSet<String>, short: bool) -> String {

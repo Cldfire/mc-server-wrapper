@@ -1,8 +1,8 @@
 use crossterm::event::{Event, KeyCode};
 use ringbuffer::RingBuffer;
 use textwrap::Wrapper;
-use tui::backend::Backend;
 use tui::{
+    backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     widgets::{Block, Borders, List, Paragraph, Tabs, Text},

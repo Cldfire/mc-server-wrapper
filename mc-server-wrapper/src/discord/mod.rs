@@ -6,16 +6,16 @@ use twilight::{
         InMemoryCache,
     },
     command_parser::{Command, CommandParserConfig, Parser},
-    gateway::shard::Event,
-    gateway::{Cluster, ClusterConfig},
+    gateway::{shard::Event, Cluster, ClusterConfig},
     http::Client as DiscordClient,
-    model::channel::{message::MessageType, Message},
-    model::gateway::GatewayIntents,
-    model::id::ChannelId,
+    model::{
+        channel::{message::MessageType, Message},
+        gateway::GatewayIntents,
+        id::ChannelId,
+    },
 };
 
-use mc_server_wrapper_lib::communication::*;
-use mc_server_wrapper_lib::parse::*;
+use mc_server_wrapper_lib::{communication::*, parse::*};
 use minecraft_chat::{Color, Payload};
 
 use util::{format_mentions_in, format_online_players, tellraw_prefix};
@@ -151,8 +151,8 @@ impl DiscordBridge {
 
     /// Handle an event from Discord
     ///
-    /// The provided `cmd_parser` is used to parse commands (not `ServerCommands`)
-    /// from Discord messages.
+    /// The provided `cmd_parser` is used to parse commands (not
+    /// `ServerCommands`) from Discord messages.
     pub async fn handle_discord_event<'a>(
         &self,
         event: (u64, Event),

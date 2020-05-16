@@ -1,5 +1,4 @@
-use chrono::offset::Local;
-use chrono::NaiveTime;
+use chrono::{offset::Local, NaiveTime};
 
 use log::log;
 
@@ -198,7 +197,8 @@ impl ConsoleMsg {
     /// This uses the `log!` macro from the `log` crate; you will need to set
     /// up logging in your application in order to see output from this.
     ///
-    /// The `target:` parameter of `log!` will be set to `CONSOLE_MSG_LOG_TARGET`.
+    /// The `target:` parameter of `log!` will be set to
+    /// `CONSOLE_MSG_LOG_TARGET`.
     pub fn log(&self) {
         log!(
             target: crate::CONSOLE_MSG_LOG_TARGET.get_or_init(|| "mc"),

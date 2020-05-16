@@ -1,39 +1,38 @@
-use std::path::PathBuf;
-use std::{collections::HashSet, time::Instant};
+use std::{collections::HashSet, path::PathBuf, time::Instant};
 
-use anyhow::anyhow;
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 
-use tokio::sync::mpsc;
-use tokio::{stream::StreamExt, sync::Mutex};
+use tokio::{
+    stream::StreamExt,
+    sync::{mpsc, Mutex},
+};
 
 use once_cell::sync::OnceCell;
 use scopeguard::defer;
 
 use twilight::model::id::ChannelId;
 
-use mc_server_wrapper_lib::communication::*;
-use mc_server_wrapper_lib::parse::*;
-use mc_server_wrapper_lib::CONSOLE_MSG_LOG_TARGET;
-use mc_server_wrapper_lib::{McServer, McServerConfig};
+use mc_server_wrapper_lib::{
+    communication::*, parse::*, McServer, McServerConfig, CONSOLE_MSG_LOG_TARGET,
+};
 
 use dotenv::dotenv;
 use log::*;
 
-use crate::discord::util::{format_online_players, sanitize_for_markdown};
-use crate::discord::*;
+use crate::discord::{
+    util::{format_online_players, sanitize_for_markdown},
+    *,
+};
 
 use crate::ui::TuiState;
 
 use crossterm::{
     cursor::MoveTo,
-    event::EventStream,
-    event::{Event, KeyCode},
+    event::{Event, EventStream, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
-use structopt::clap::AppSettings;
-use structopt::StructOpt;
+use structopt::{clap::AppSettings, StructOpt};
 use tui::{
     backend::{Backend, CrosstermBackend},
     Terminal,
@@ -83,8 +82,8 @@ pub struct Opt {
     #[structopt(long, env, default_value = "debug")]
     log_level_self: log::Level,
 
-    /// Logging level for Discord-related dependencies [error, warn, info, debug,
-    /// trace]
+    /// Logging level for Discord-related dependencies [error, warn, info,
+    /// debug, trace]
     ///
     /// This overrides --log-level-all and only affects file logging.
     #[structopt(long, env, default_value = "info")]

@@ -14,8 +14,7 @@ use tokio::stream::StreamExt;
 
 use structopt::StructOpt;
 
-use mc_server_wrapper_lib::communication::*;
-use mc_server_wrapper_lib::{McServer, McServerConfig};
+use mc_server_wrapper_lib::{communication::*, McServer, McServerConfig};
 
 #[derive(StructOpt, Debug)]
 pub struct Opt {

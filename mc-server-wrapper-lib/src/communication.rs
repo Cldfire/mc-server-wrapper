@@ -1,7 +1,6 @@
 use crate::parse::*;
 
-use std::io;
-use std::process::ExitStatus;
+use std::{io, process::ExitStatus};
 
 /// Events from a Minecraft server.
 // TODO: derive serialize, deserialize

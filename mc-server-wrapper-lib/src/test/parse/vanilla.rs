@@ -1,7 +1,6 @@
 //! Tests for parsing vanilla console output
 
-use crate::parse::ConsoleMsgType;
-use crate::parse::{ConsoleMsg, ConsoleMsgSpecific};
+use crate::parse::{ConsoleMsg, ConsoleMsgSpecific, ConsoleMsgType};
 use chrono::Timelike;
 
 #[test]
