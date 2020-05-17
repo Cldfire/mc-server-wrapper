@@ -9,7 +9,7 @@ use twilight::{
     gateway::{shard::Event, Cluster, ClusterConfig},
     http::Client as DiscordClient,
     model::{
-        channel::{message::MessageType, Message},
+        channel::{message::MessageType, GuildChannel, Message},
         gateway::GatewayIntents,
         id::ChannelId,
     },
@@ -164,7 +164,25 @@ impl DiscordBridge {
                 info!("Discord bridge online");
             }
             (_, Event::GuildCreate(guild)) => {
-                info!("Connected to guild {}", guild.name);
+                // Log the name of the channel we're bridging to as well if it's
+                // in this guild
+                if let Some(channel_name) =
+                    guild
+                        .channels
+                        .get(&self.bridge_channel_id)
+                        .map_or(None, |c| match c {
+                            GuildChannel::Category(c) => Some(&c.name),
+                            GuildChannel::Text(c) => Some(&c.name),
+                            _ => None,
+                        })
+                {
+                    info!(
+                        "Connected to guild {}, bridging chat to '#{}'",
+                        guild.name, channel_name
+                    );
+                } else {
+                    info!("Connected to guild {}", guild.name);
+                }
             }
             (_, Event::MessageCreate(msg)) => {
                 if msg.kind == MessageType::Regular
