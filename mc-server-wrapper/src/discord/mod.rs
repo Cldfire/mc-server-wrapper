@@ -338,8 +338,12 @@ impl DiscordBridge {
 
     /// Sends the given text to the channel being bridged to
     ///
-    /// A new task is spawned to send the message
-    pub fn send_channel_msg<T: Into<String> + Send + 'static>(self, text: T) {
+    /// A new task is spawned to send the message, and its `JoinHandle` is
+    /// returned so its completion can be `await`ed if desired.
+    pub fn send_channel_msg<T: Into<String> + Send + 'static>(
+        self,
+        text: T,
+    ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             if let Some(inner) = self.inner {
                 if let Err(e) = inner
@@ -351,14 +355,17 @@ impl DiscordBridge {
                     warn!("Failed to send Discord message: {}", e);
                 }
             }
-        });
+        })
     }
 
     /// Sets the topic of the channel being bridged to to `text`
     ///
-    /// A new task is spawned to change the topic
-    // TODO: all of these functions need to expose a way to await their completion
-    pub fn set_channel_topic<T: Into<String> + Send + 'static>(self, text: T) {
+    /// A new task is spawned to send the message, and its `JoinHandle` is
+    /// returned so its completion can be `await`ed if desired.
+    pub fn set_channel_topic<T: Into<String> + Send + 'static>(
+        self,
+        text: T,
+    ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             if let Some(inner) = self.inner {
                 if let Err(e) = inner
@@ -370,6 +377,6 @@ impl DiscordBridge {
                     warn!("Failed to set Discord channel topic: {}", e);
                 }
             }
-        });
+        })
     }
 }

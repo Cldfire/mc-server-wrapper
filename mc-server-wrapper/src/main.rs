@@ -323,8 +323,9 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // TODO: need to await completion of this, otherwise it panics
-    // discord.clone().set_channel_topic("Minecraft server is offline");
+    let _ = discord
+        .set_channel_topic("Minecraft server is offline")
+        .await;
 
     Ok(())
 }
