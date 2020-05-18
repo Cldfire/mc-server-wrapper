@@ -99,12 +99,27 @@ impl McServerConfig {
 }
 
 /// Represents a single wrapped Minecraft server that may be running or stopped
+// TODO: the design here is dumb. `McServer` should not hold a reference to
+// `McServerInternal`.
+//
+// The conceptual problem here is that we have 3 lifetimes to be concerned about.
+// The first is the lifetime of the channels that the user of the library uses
+// to communicate with the possibly-running Minecraft server. The second is the
+// lifetime of whatever handles that communication on the library side (the
+// command listener). The third are the lifetimes of the individual Minecraft
+// server processes themselves.
+//
+// The current design is mixing these lifetimes together into a tangled mess.
+// Things need to be broken apart so that each lifetime is clearly defined in
+// the way things are structured.
 #[derive(Debug)]
 pub struct McServer {
     /// Channel through which commands can be sent to the server
     pub cmd_sender: mpsc::Sender<ServerCommand>,
     /// Channel through which events are received from the server
     pub event_receiver: mpsc::Receiver<ServerEvent>,
+    // A reference to internal stuff so we can provide the `running` method
+    internal: Arc<McServerInternal>,
 }
 
 impl McServer {
@@ -121,18 +136,25 @@ impl McServer {
         let (cmd_sender, cmd_receiver) = mpsc::channel::<ServerCommand>(64);
         let (event_sender, event_receiver) = mpsc::channel::<ServerEvent>(64);
 
-        Arc::new(McServerInternal {
+        let internal = Arc::new(McServerInternal {
             config,
             event_sender,
-            mc_stdin: Arc::new(Mutex::new(None)),
+            mc_stdin: Mutex::new(None),
+            shutdown_reason: Mutex::new(None),
             running: Mutex::new(false),
-        })
-        .spawn_listener(cmd_receiver);
+        });
+        internal.clone().spawn_listener(cmd_receiver);
 
         Ok(McServer {
             cmd_sender,
             event_receiver,
+            internal,
         })
+    }
+
+    /// Returns true if the Minecraft server is currently running
+    pub async fn running(&self) -> bool {
+        self.internal.running().await
     }
 }
 
@@ -145,7 +167,12 @@ struct McServerInternal {
     /// Channel through which we send events
     event_sender: mpsc::Sender<ServerEvent>,
     /// Handle to the server's stdin if it's running and stdin is being piped
-    mc_stdin: Arc<Mutex<Option<process::ChildStdin>>>,
+    mc_stdin: Mutex<Option<process::ChildStdin>>,
+    /// Keeps track of a reason why the server had to shut down
+    ///
+    /// An example is the EULA needing to be accepted. This allows us to provide
+    /// the library user with some context when a shutdown occurs.
+    shutdown_reason: Mutex<Option<ShutdownReason>>,
     /// Whether or not the server is currently running
     running: Mutex<bool>,
 }
@@ -195,7 +222,7 @@ impl McServerInternal {
                         // Spawn a task to drive the server process to completion
                         // and send an event when it exits
                         tokio::spawn(async move {
-                            let ret = mc_server_internal.run_server().await;
+                            let ret = mc_server_internal.clone().run_server().await;
                             mc_server_internal
                                 .event_sender
                                 .clone()
@@ -222,7 +249,9 @@ impl McServerInternal {
     // TODO: maybe split into functions that start the server and interface
     // with it
     // TODO: audit unwrapping
-    async fn run_server(&self) -> (tokio::io::Result<ExitStatus>, Option<ShutdownReason>) {
+    async fn run_server(self: Arc<Self>) -> (io::Result<ExitStatus>, Option<ShutdownReason>) {
+        self.clear_shutdown_reason().await;
+
         let folder = self
             .config
             .server_path
@@ -275,23 +304,20 @@ impl McServerInternal {
         });
 
         let event_sender_clone = self.event_sender.clone();
+        let self_clone = self.clone();
         let stdout_handle = tokio::spawn(async move {
             use ServerEvent::*;
             let mut event_sender = event_sender_clone;
-            // We have this return value so we can keep track of things (such
-            // as a EULA that needs agreed to) and send that along with the
-            // server shutdown event
-            //
-            // This makes things much easier on the library user as they don't
-            // need to come up with a separate mechanism for doing that
-            let mut shutdown_reason = None;
+            let self_clone = self_clone;
 
             while let Some(line) = stdout.next_line().await.unwrap() {
                 if let Some(console_msg) = ConsoleMsg::try_parse_from(&line) {
                     let specific_msg = ConsoleMsgSpecific::try_parse_from(&console_msg);
 
                     if specific_msg == Some(ConsoleMsgSpecific::MustAcceptEula) {
-                        shutdown_reason = Some(ShutdownReason::EulaNotAccepted);
+                        self_clone
+                            .set_shutdown_reason(Some(ShutdownReason::EulaNotAccepted))
+                            .await;
                     }
 
                     event_sender
@@ -304,24 +330,39 @@ impl McServerInternal {
                     event_sender.send(StdoutLine(line)).await.unwrap();
                 }
             }
-
-            shutdown_reason
         });
 
-        let (status, stdout_val, _) = tokio::join!(status_handle, stdout_handle, stderr_handle,);
+        let (status, _, _) = tokio::join!(status_handle, stdout_handle, stderr_handle,);
 
         if !self.config.inherit_stdin {
             self.set_stdin(None).await;
         }
         self.set_running(false).await;
 
-        (status.unwrap(), stdout_val.unwrap())
+        (status.unwrap(), self.shutdown_reason().await)
     }
 
     /// Set the stdin handle
     async fn set_stdin(&self, to: Option<ChildStdin>) {
         let mut mc_stdin = self.mc_stdin.lock().await;
         *mc_stdin = to;
+    }
+
+    /// Set the shutdown reason
+    async fn set_shutdown_reason(&self, to: Option<ShutdownReason>) {
+        let mut shutdown_reason = self.shutdown_reason.lock().await;
+        *shutdown_reason = to;
+    }
+
+    /// Clear the currently stored shutdown reason
+    async fn clear_shutdown_reason(&self) {
+        self.set_shutdown_reason(None).await;
+    }
+
+    /// Get the value of `shutdown_reason`
+    async fn shutdown_reason(&self) -> Option<ShutdownReason> {
+        let shutdown_reason = self.shutdown_reason.lock().await;
+        shutdown_reason.clone()
     }
 
     /// Set the value of `running`
@@ -338,9 +379,16 @@ impl McServerInternal {
 
     /// Writes the given bytes to the server's stdin if the server is running
     async fn write_to_stdin<B: AsRef<[u8]>>(&self, bytes: B) -> io::Result<()> {
+        let bytes = bytes.as_ref();
+
+        if bytes == b"stop\n" {
+            self.set_shutdown_reason(Some(ShutdownReason::RequestedToStop))
+                .await;
+        }
+
         let mut stdin = self.mc_stdin.lock().await;
         if let Some(stdin) = &mut *stdin {
-            stdin.write_all(bytes.as_ref()).await
+            stdin.write_all(bytes).await
         } else {
             Ok(())
         }

@@ -35,6 +35,8 @@ async fn main() {
         .await
         .unwrap();
 
+    // TODO: this loop currently never exists :( need to re-work library design
+    // to fix that when I have time
     while let Some(e) = mc_server.event_receiver.next().await {
         match e {
             ServerEvent::ConsoleEvent(console_msg, Some(specific_msg)) => {
@@ -53,17 +55,13 @@ async fn main() {
             }
 
             ServerEvent::ServerStopped(process_result, reason) => {
-                if let Some(reason) = reason {
-                    match reason {
-                        ShutdownReason::EulaNotAccepted => {
-                            println!("Agreeing to EULA!");
-                            mc_server
-                                .cmd_sender
-                                .send(ServerCommand::AgreeToEula)
-                                .await
-                                .unwrap();
-                        }
-                    }
+                if let Some(ShutdownReason::EulaNotAccepted) = reason {
+                    println!("Agreeing to EULA!");
+                    mc_server
+                        .cmd_sender
+                        .send(ServerCommand::AgreeToEula)
+                        .await
+                        .unwrap();
                 } else {
                     match process_result {
                         Ok(exit_status) => {

@@ -67,6 +67,13 @@ pub fn setup_logger<P: AsRef<Path>>(
             .to_owned();
 
             let mut log_sender_clone = log_sender.clone();
+            // TODO: right now log messages can print out-of-order because we
+            // don't block on sending them
+            //
+            // Tried using `Handle::block_on` but couldn't get it to not panic
+            // with `Illegal instruction`
+            //
+            // Need to investigate
             tokio::spawn(async move {
                 let _ = log_sender_clone.send(text).await;
             });

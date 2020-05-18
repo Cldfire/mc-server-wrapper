@@ -6,7 +6,7 @@ use fmt::Display;
 use std::fmt;
 
 /// More informative representations for specific, supported console messages.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConsoleMsgSpecific {
     MustAcceptEula,
     PlayerMsg {
@@ -161,7 +161,7 @@ impl ConsoleMsgSpecific {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConsoleMsg {
     pub timestamp: NaiveTime,
     pub thread_name: String,

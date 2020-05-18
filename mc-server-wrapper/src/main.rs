@@ -153,8 +153,7 @@ async fn main() -> anyhow::Result<()> {
         DiscordBridge::new_noop()
     };
 
-    // TODO: log what channel / guild we are bridging to using the cache
-
+    info!("Starting the Minecraft server");
     mc_server
         .cmd_sender
         .send(ServerCommand::StartServer)
@@ -162,6 +161,8 @@ async fn main() -> anyhow::Result<()> {
         .unwrap();
     let mut last_start_time = Instant::now();
     let mut term_events = EventStream::new();
+    // TODO: we should not need this
+    let mut should_exit_loop = false;
 
     // This loop handles both user input and events from the Minecraft server
     loop {
@@ -183,6 +184,10 @@ async fn main() -> anyhow::Result<()> {
             ))
             .unwrap();
 
+        if should_exit_loop == true {
+            break;
+        }
+
         tokio::select! {
             e = mc_server.event_receiver.next() => if let Some(e) = e {
                 match e {
@@ -192,6 +197,8 @@ async fn main() -> anyhow::Result<()> {
                         }
 
                         // TODO: re-add progress bar support for world loading at some point?
+                        // TODO: parse when server is done booting so we can set Discord
+                        // channel topic
                         match specific_msg {
                             ConsoleMsgSpecific::PlayerLogout { name } => {
                                 discord.clone().send_channel_msg(format!(
@@ -239,49 +246,67 @@ async fn main() -> anyhow::Result<()> {
                         warn!(target: CONSOLE_MSG_LOG_TARGET.get().unwrap(), "{}", line);
                     },
 
-                    ServerEvent::ServerStopped(process_result, reason) => if let Some(reason) = reason {
-                        match reason {
-                            ShutdownReason::EulaNotAccepted => {
-                                info!("Agreeing to EULA!");
-                                mc_server.cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();
-                            }
-                        }
-                    } else {
-                        // TODO: clean this up so there's less repetition
-                        // introduce a `should_restart` variable
-                        match process_result {
-                            Ok(exit_status) => if exit_status.success() {
-                                // TODO: we eventually need to not stop the server forever here
-                                //
-                                // have a `ShutdownReason` along the lines of "you told me to stop"
-                                mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                            } else {
-                                // There are circumstances where the status will be failure
-                                // and attempting to restart the server will always fail. We
-                                // attempt to catch these cases by not restarting if the
-                                // server crashed twice within a small time window
-                                if last_start_time.elapsed().as_secs() < 60 {
-                                    // TODO: when an error is printed, wait for user input to exit the TUI
-                                    error!("Fatal error believed to have been encountered, not restarting server");
-                                    mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                                } else {
-                                    info!("Restarting server...");
-                                    mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
-                                    last_start_time = Instant::now();
-                                    // TODO: tell discord that the mc server crashed
+                    ServerEvent::ServerStopped(process_result, reason) => {
+                        discord.clone().set_channel_topic("Minecraft server is offline");
+
+                        if let Some(ShutdownReason::EulaNotAccepted) = reason {
+                            info!("Agreeing to EULA!");
+                            mc_server.cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();
+                        } else {
+                            let mut sent_restart_command = false;
+
+                            // How we handle this depends on whether or not we asked the server to stop
+                            if let Some(ShutdownReason::RequestedToStop) = reason {
+                                match process_result {
+                                    Ok(exit_status) => if exit_status.success() {
+                                        info!("Minecraft server process exited successfully");
+                                    } else {
+                                        warn!("Minecraft server process exited non-successfully with code {}", &exit_status);
+                                    },
+                                    Err(e) => {
+                                        // TODO: print exit status here as well?
+                                        error!("Minecraft server process exited non-successfully with error {}", e);
+                                    }
                                 }
-                            },
-                            Err(e) => {
-                                error!("Minecraft server process finished with error: {}, not restarting server", e);
-                                mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                            } else {
+                                // We did not ask the server to stop
+                                match process_result {
+                                    Ok(exit_status) => {
+                                        warn!("Minecraft server process exited with code {}", &exit_status);
+                                        discord.clone().send_channel_msg("The Minecraft server crashed!");
+
+                                        // Attempt to restart the server if it's been up for at least 5 minutes
+                                        // TODO: make this configurable
+                                        // TODO: maybe parse logs for things that definitely indicate a crash?
+                                        if last_start_time.elapsed().as_secs() > 300 {
+                                            mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+
+                                            last_start_time = Instant::now();
+                                            sent_restart_command = true;
+                                        } else {
+                                            error!("Fatal error believed to have been encountered, not restarting server");
+                                        }
+                                    },
+                                    Err(e) => {
+                                        error!("Minecraft server process exited with error: {}, not restarting server", e);
+                                    }
+                                }
+                            }
+
+                            if sent_restart_command {
+                                info!("Restarting server...");
+                                discord.clone().send_channel_msg("Restarting the Minecraft server...");
+                            } else {
+                                info!("Start the Minecraft server back up with `start` or shutdown the wrapper with `stop`");
                             }
                         }
-                    }
+                    },
 
                     ServerEvent::AgreeToEulaResult(res) => {
                         if let Err(e) = res {
                             error!("Failed to agree to EULA: {:?}", e);
                             mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                            should_exit_loop = true;
                         } else {
                             mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
                             last_start_time = Instant::now();
@@ -289,8 +314,8 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             } else {
-                // `McServer` instance was shut down forever. Exit program
-                break;
+                // TODO: this should be reachable, need to re-work library design
+                unreachable!();
             },
             Some(record) = log_receiver.next() => {
                 tui_state.logs_state.add_record(record);
@@ -301,7 +326,25 @@ async fn main() -> anyhow::Result<()> {
                         if let Event::Key(key_event) = event {
                             match key_event.code {
                                 KeyCode::Enter => {
-                                    mc_server.cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.input_state.value())).await.unwrap();
+                                    if mc_server.running().await {
+                                        mc_server.cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.input_state.value().to_string())).await.unwrap();
+                                    } else {
+                                        // TODO: create a command parser for user input?
+                                        // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe
+                                        match tui_state.input_state.value() {
+                                            "start" => {
+                                                info!("Starting the Minecraft server");
+                                                mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                                                last_start_time = Instant::now();
+                                            },
+                                            "stop" => {
+                                                mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                                                should_exit_loop = true;
+                                            },
+                                            _ => {}
+                                        }
+                                    }
+
                                     tui_state.input_state.clear();
                                 },
                                 _ => {}
@@ -319,13 +362,10 @@ async fn main() -> anyhow::Result<()> {
                     },
                 }
             },
+            // TODO: get rid of this
             else => break,
         }
     }
-
-    let _ = discord
-        .set_channel_topic("Minecraft server is offline")
-        .await;
 
     Ok(())
 }

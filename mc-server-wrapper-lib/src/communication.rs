@@ -28,7 +28,7 @@ pub enum ServerEvent {
 
     /// The Minecraft server process finished with the given result  and, if
     /// known, a reason for exiting
-    ServerStopped(tokio::io::Result<ExitStatus>, Option<ShutdownReason>),
+    ServerStopped(io::Result<ExitStatus>, Option<ShutdownReason>),
 
     /// Response to `AgreeToEula`
     AgreeToEulaResult(io::Result<()>),
@@ -38,7 +38,7 @@ pub enum ServerEvent {
 ///
 /// Note that all commands will be ignored if they cannot be performed (i.e.,
 /// telling the server to send a message )
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ServerCommand {
     /// Send a message to all players on the server
     ///
@@ -66,8 +66,10 @@ pub enum ServerCommand {
 
 /// Reasons that a Minecraft server stopped running
 // TODO: add variant indicating user requested server be stopped
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ShutdownReason {
     /// The server stopped because the EULA has not been accepted
     EulaNotAccepted,
+    /// The server stopped because `ServerCommand::StopServer` was received
+    RequestedToStop,
 }

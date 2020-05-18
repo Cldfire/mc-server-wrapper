@@ -177,7 +177,7 @@ impl InputState {
     }
 
     /// Get the current value of the input
-    pub fn value(&self) -> String {
-        self.value.clone()
+    pub fn value(&self) -> &str {
+        &self.value
     }
 }
