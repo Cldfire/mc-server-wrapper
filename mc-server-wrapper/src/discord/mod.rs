@@ -6,7 +6,7 @@ use twilight::{
         InMemoryCache,
     },
     command_parser::{Command, CommandParserConfig, Parser},
-    gateway::{shard::Event, Cluster, ClusterConfig},
+    gateway::{Cluster, ClusterConfig, Event},
     http::Client as DiscordClient,
     model::{
         channel::{message::MessageType, GuildChannel, Message},
@@ -33,6 +33,7 @@ pub async fn setup_discord(
     bridge_channel_id: ChannelId,
     mc_cmd_sender: Sender<ServerCommand>,
 ) -> anyhow::Result<DiscordBridge> {
+    info!("Setting up Discord");
     let discord = DiscordBridge::new(token, bridge_channel_id).await?;
 
     let discord_clone = discord.clone();
@@ -99,8 +100,12 @@ impl DiscordBridge {
                 GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILDS,
             ))
             .build();
-        let cluster = Cluster::new(cluster_config);
-        cluster.up().await?;
+        let cluster = Cluster::new(cluster_config).await?;
+
+        let cluster_spawn = cluster.clone();
+        tokio::spawn(async move {
+            cluster_spawn.up().await;
+        });
 
         let cache_config = InMemoryConfigBuilder::new()
             .event_types(
@@ -364,13 +369,28 @@ impl DiscordBridge {
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             if let Some(inner) = self.inner {
-                if let Err(e) = inner
+                let content_res = inner
                     .client
                     .create_message(self.bridge_channel_id)
-                    .content(text)
-                    .await
-                {
-                    warn!("Failed to send Discord message: {}", e);
+                    .content(text);
+
+                match content_res {
+                    Ok(cm) => {
+                        if let Err(e) = cm.await {
+                            warn!("Failed to send Discord message: {}", e);
+                        }
+                    }
+                    Err(validation_err) => {
+                        warn!(
+                            "Attempted to send invalid message to Discord: {}",
+                            validation_err
+                        );
+                        // TODO: we should log the invalid message content here,
+                        // but the current
+                        // design of twilight makes it difficult to do that (the
+                        // message content is moved and
+                        // the error doesn't return it)
+                    }
                 }
             }
         })
@@ -386,13 +406,24 @@ impl DiscordBridge {
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             if let Some(inner) = self.inner {
-                if let Err(e) = inner
+                let content_res = inner
                     .client
                     .update_channel(self.bridge_channel_id)
-                    .topic(text)
-                    .await
-                {
-                    warn!("Failed to set Discord channel topic: {}", e);
+                    .topic(text);
+
+                match content_res {
+                    Ok(cm) => {
+                        if let Err(e) = cm.await {
+                            warn!("Failed to set Discord channel topic: {}", e);
+                        }
+                    }
+                    Err(validation_err) => {
+                        warn!(
+                            "Attempted to set Discord channel topic to invalid content: {}",
+                            validation_err
+                        );
+                        // TODO: should also log here as described above
+                    }
                 }
             }
         })
