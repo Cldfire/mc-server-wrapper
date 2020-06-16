@@ -261,7 +261,41 @@ impl McServerInternal {
             .unwrap_or_else(|| OsStr::new("."));
         let file = self.config.server_path.file_name().unwrap();
 
-        let mut process = process::Command::new("sh")
+        let java_args = format!(
+            "-Xms{}M -Xmx{}M {} -jar {:?} nogui",
+            self.config.memory,
+            self.config.memory,
+            self.config.jvm_flags.as_deref().unwrap_or(""),
+            file
+        );
+
+        // I don't know much about powershell but this works so ¯\_(ツ)_/¯
+        let args = if cfg!(windows) {
+            vec![
+                "Start-Process",
+                "-NoNewWindow",
+                "-FilePath",
+                "java.exe",
+                "-WorkingDirectory",
+                &folder.to_string_lossy(),
+                "-ArgumentList",
+                &format!("'{}'", &java_args),
+            ]
+            .into_iter()
+            .map(|s| s.into())
+            .collect()
+        } else {
+            vec![
+                "-c".into(),
+                format!(
+                    "cd {} && exec java {}",
+                    folder.to_string_lossy(),
+                    &java_args
+                ),
+            ]
+        };
+
+        let mut process = process::Command::new(if cfg!(windows) { "PowerShell" } else { "sh" })
             .stdin(if self.config.inherit_stdin {
                 Stdio::inherit()
             } else {
@@ -269,17 +303,7 @@ impl McServerInternal {
             })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .args(&[
-                "-c",
-                &format!(
-                    "cd {:?} && exec java -Xms{}M -Xmx{}M {} -jar {:?} nogui",
-                    folder,
-                    self.config.memory,
-                    self.config.memory,
-                    self.config.jvm_flags.as_deref().unwrap_or(""),
-                    file
-                ),
-            ])
+            .args(&args)
             .spawn()
             .unwrap();
 
