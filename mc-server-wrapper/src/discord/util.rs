@@ -1,7 +1,21 @@
 use super::CHAT_PREFIX;
 use minecraft_chat::{Color, MessageBuilder, Payload};
 use std::collections::{HashMap, HashSet};
-use twilight::model::id::{RoleId, UserId};
+use twilight::{
+    cache::InMemoryCache,
+    model::{
+        channel::GuildChannel,
+        id::{ChannelId, RoleId, UserId},
+    },
+};
+
+pub fn channel_name(channel: &GuildChannel) -> &str {
+    match channel {
+        GuildChannel::Category(cchan) => &cchan.name,
+        GuildChannel::Text(tchan) => &tchan.name,
+        GuildChannel::Voice(vchan) => &vchan.name,
+    }
+}
 
 /// Returns a `MessageBuilder` with a nice prefix for Discord messages in
 /// Minecraft
@@ -17,13 +31,17 @@ pub fn tellraw_prefix() -> MessageBuilder {
 /// Formats mentions in the given content using the given info
 ///
 /// `mentions` maps mentioned user IDs to their names
+///
+/// The given `cache` is used to get data to replace channel and role mention
+/// names with
 // TODO: this code is complicated, explore strategies to simplify?
 // TODO: does not handle escaped mentions (but this is a SUPER edge case and
 // the Discord client doesn't even handle those right either)
-pub fn format_mentions_in<S: Into<String>>(
+pub async fn format_mentions_in<S: Into<String>>(
     content: S,
     mentions: HashMap<&UserId, &str>,
     mention_roles: &[RoleId],
+    cache: InMemoryCache,
 ) -> String {
     enum MentionType {
         User,
@@ -32,10 +50,6 @@ pub fn format_mentions_in<S: Into<String>>(
         Unknown,
     }
     let mut content = content.into();
-    // We can't do anything useful without info about mentions
-    if mentions.is_empty() && mention_roles.is_empty() {
-        return content;
-    }
 
     let mut content_slice = &content.clone()[..];
     while let Some(idx) = content_slice.find('<') {
@@ -68,17 +82,19 @@ pub fn format_mentions_in<S: Into<String>>(
 
         // Check if this could be a mention
         if let Some(slice) = content_slice.get(idx..idx + 3) {
+            // Note that the order of evaluation here matters
             if slice.starts_with("<@!") {
+                // TODO: I think this should be `MentionType::BotUser`?
                 mention_type = MentionType::User;
+                possible_id_after(idx + 3);
+            } else if slice.starts_with("<@&") {
+                mention_type = MentionType::Role;
                 possible_id_after(idx + 3);
             } else if slice.starts_with("<@") {
                 // As far as I know it is correct to treat this as a user mention
                 // TODO: once `strip_prefix` is stable, merge with the above branch?
                 mention_type = MentionType::User;
                 possible_id_after(idx + 2);
-            } else if slice.starts_with("<@&") {
-                mention_type = MentionType::Role;
-                possible_id_after(idx + 3);
             } else if slice.starts_with("<#") {
                 mention_type = MentionType::Channel;
                 possible_id_after(idx + 2);
@@ -112,24 +128,21 @@ pub fn format_mentions_in<S: Into<String>>(
                     }
                 }
                 MentionType::Channel => {
-                    // TODO: this doesn't work because the `mention_channels`
-                    // field doesn't get sent 99% of the
-                    // time
-                    //
-                    // will need to use cache for this as well
-
-                    // if let Some(channel) =
-                    // msg.mention_channels.iter().find(|c| id == c.id.0) {
-                    //     replace_mention(&format!("#{}", channel.name));
-                    // }
-                }
-                MentionType::Role => {
-                    if let Some(_role_id) = mention_roles.iter().find(|r| id == r.0) {
-                        // TODO: need to set up caching so we can get a role
-                        // name from the id here
+                    if let Some(channel) = cache.guild_channel(ChannelId(id)).await.unwrap() {
+                        replace_mention(&format!("#{}", channel_name(&channel)));
                     }
                 }
-                MentionType::Unknown => unreachable!(),
+                MentionType::Role => {
+                    if let Some(role_id) = mention_roles.iter().find(|r| id == r.0) {
+                        if let Some(role) = cache.role(*role_id).await.unwrap() {
+                            replace_mention(&format!("@{}", &role.name));
+                        }
+                    }
+                }
+                MentionType::Unknown => log::warn!(
+                    "Encountered unknown mention type in Discord message: {}",
+                    &content
+                ),
             }
         }
 
@@ -227,89 +240,221 @@ mod test {
     mod content_format_mentions {
         use super::super::format_mentions_in;
         use std::collections::HashMap;
-        use twilight::model::id::UserId;
+        use twilight::{
+            cache::InMemoryCache,
+            model::{
+                channel::{ChannelType, GuildChannel, TextChannel},
+                guild::{Permissions, Role},
+                id::{ChannelId, GuildId, RoleId, UserId},
+            },
+        };
 
-        #[test]
-        fn blank_message() {
+        fn make_text_channel() -> TextChannel {
+            TextChannel {
+                id: ChannelId(1234),
+                guild_id: Some(GuildId(0)),
+                kind: ChannelType::GuildText,
+                last_message_id: None,
+                last_pin_timestamp: None,
+                name: "test-channel".into(),
+                nsfw: false,
+                permission_overwrites: vec![],
+                parent_id: None,
+                position: 0,
+                rate_limit_per_user: None,
+                topic: Some("a test channel".into()),
+            }
+        }
+
+        fn make_role() -> Role {
+            Role {
+                id: RoleId(2345),
+                color: 0,
+                hoist: false,
+                managed: false,
+                mentionable: true,
+                name: "test-role".into(),
+                permissions: Permissions::empty(),
+                position: 0,
+            }
+        }
+
+        #[tokio::test]
+        async fn blank_message() {
             let msg = "";
-            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+            let formatted =
+                format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new()).await;
 
             assert_eq!(formatted, "");
         }
 
-        #[test]
-        fn fake_mention() {
+        #[tokio::test]
+        async fn fake_mention() {
             let msg = "the upcoming bracket <@thing is not a mention";
-            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+            let formatted =
+                format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new()).await;
 
             assert_eq!(formatted, msg);
         }
 
-        #[test]
-        fn closing_bracket_then_start_mention() {
+        #[tokio::test]
+        async fn closing_bracket_then_start_mention() {
             let msg = "><@!kksdk";
-            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+            let formatted =
+                format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new()).await;
 
             assert_eq!(formatted, msg);
         }
 
-        #[test]
-        fn fake_mention_crazy() {
+        #[tokio::test]
+        async fn fake_mention_crazy() {
             let msg = "<<><><@!><#><>#<>>>>";
-            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+            let formatted =
+                format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new()).await;
 
             assert_eq!(formatted, msg);
         }
 
-        #[test]
-        fn fake_mention_bad_id() {
+        #[tokio::test]
+        async fn fake_mention_bad_id() {
             let msg = "<@!12notanumber>";
-            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+            let formatted =
+                format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new()).await;
 
             assert_eq!(formatted, msg);
         }
 
-        #[test]
-        fn one_mention_no_info() {
+        #[tokio::test]
+        async fn one_mention_no_info() {
             let msg = "this has a mention: <@123>, but we're not passing mentions";
-            let formatted = format_mentions_in(msg, HashMap::new(), &vec![]);
+            let formatted =
+                format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new()).await;
 
             assert_eq!(formatted, msg);
         }
 
-        #[test]
-        fn one_mention_with_info() {
+        #[tokio::test]
+        async fn one_mention_with_info() {
             let msg = "this has a mention: <@123>, and we are passing mentions";
             let mut mentions = HashMap::new();
             mentions.insert(&UserId(123), "TestName");
 
-            let formatted = format_mentions_in(msg, mentions, &vec![]);
+            let formatted = format_mentions_in(msg, mentions, &[], InMemoryCache::new()).await;
             assert_eq!(
                 formatted,
                 "this has a mention: @TestName, and we are passing mentions"
             );
         }
 
-        #[test]
-        fn two_mentions_with_info() {
+        #[tokio::test]
+        async fn two_mentions_with_info() {
             let msg = "<@123>, and even <@!321>!";
             let mut mentions = HashMap::new();
             mentions.insert(&UserId(123), "TestName");
             mentions.insert(&UserId(321), "AnotherTest");
 
-            let formatted = format_mentions_in(msg, mentions, &vec![]);
+            let formatted = format_mentions_in(msg, mentions, &[], InMemoryCache::new()).await;
             assert_eq!(formatted, "@TestName, and even @AnotherTest!");
         }
 
-        #[test]
-        fn three_mentions_some_with_info() {
+        #[tokio::test]
+        async fn three_mentions_some_with_info() {
             let msg = "<@123>, and even <@!321>, and wow: <@3234>";
             let mut mentions = HashMap::new();
             mentions.insert(&UserId(123), "TestName");
             mentions.insert(&UserId(3234), "WowTest");
 
-            let formatted = format_mentions_in(msg, mentions, &vec![]);
+            let formatted = format_mentions_in(msg, mentions, &[], InMemoryCache::new()).await;
             assert_eq!(formatted, "@TestName, and even <@!321>, and wow: @WowTest");
+        }
+
+        #[tokio::test]
+        async fn channel_mention_no_info() {
+            let msg = "this is a channel mention: <#1234>";
+
+            let formatted =
+                format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new()).await;
+            assert_eq!(formatted, msg);
+        }
+
+        #[tokio::test]
+        async fn channel_mention_with_info() {
+            let msg = "this is a channel mention: <#1234>";
+
+            let cache = InMemoryCache::new();
+            cache
+                .cache_guild_channel(GuildId(0), GuildChannel::Text(make_text_channel()))
+                .await;
+
+            let formatted = format_mentions_in(msg, HashMap::new(), &[], cache).await;
+            assert_eq!(formatted, "this is a channel mention: #test-channel");
+        }
+
+        #[tokio::test]
+        async fn channel_mention_with_others() {
+            let msg = "<@1234> <#245> this is a channel mention: <#1234>";
+
+            let cache = InMemoryCache::new();
+            cache
+                .cache_guild_channel(GuildId(0), GuildChannel::Text(make_text_channel()))
+                .await;
+
+            let formatted = format_mentions_in(msg, HashMap::new(), &[], cache).await;
+            assert_eq!(
+                formatted,
+                "<@1234> <#245> this is a channel mention: #test-channel"
+            );
+        }
+
+        #[tokio::test]
+        async fn role_mention_no_info() {
+            let msg = "this is a role mention: <@&2345>";
+
+            let formatted =
+                format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new()).await;
+            assert_eq!(formatted, "this is a role mention: <@&2345>");
+        }
+
+        #[tokio::test]
+        async fn role_mention_with_partial_info() {
+            let msg = "this is a role mention: <@&2345>";
+
+            let cache = InMemoryCache::new();
+            cache.cache_role(GuildId(0), make_role()).await;
+
+            let formatted = format_mentions_in(msg, HashMap::new(), &[], cache).await;
+            assert_eq!(formatted, msg);
+        }
+
+        #[tokio::test]
+        async fn role_mention_with_info() {
+            let msg = "this is a role mention: <@&2345>";
+
+            let cache = InMemoryCache::new();
+            cache.cache_role(GuildId(0), make_role()).await;
+
+            let formatted = format_mentions_in(msg, HashMap::new(), &[RoleId(2345)], cache).await;
+            assert_eq!(formatted, "this is a role mention: @test-role");
+        }
+
+        #[tokio::test]
+        async fn all_combined() {
+            let msg = "<@1212> this channel (<#1234>) is pretty cool for the role <@&2345>!";
+
+            let mut mentions = HashMap::new();
+            mentions.insert(&UserId(1212), "TestName");
+
+            let cache = InMemoryCache::new();
+            cache.cache_role(GuildId(0), make_role()).await;
+            cache
+                .cache_guild_channel(GuildId(0), GuildChannel::Text(make_text_channel()))
+                .await;
+
+            let formatted = format_mentions_in(msg, mentions, &[RoleId(2345)], cache).await;
+            assert_eq!(
+                formatted,
+                "@TestName this channel (#test-channel) is pretty cool for the role @test-role!"
+            );
         }
     }
 

@@ -271,6 +271,8 @@ impl DiscordBridge {
     }
 
     /// Handles the content of the message
+    ///
+    /// This can only be called if `self.inner` is `Some`
     async fn handle_msg_content(&self, msg: &Message, mut mc_cmd_sender: Sender<ServerCommand>) {
         if msg.content.is_empty() {
             debug!("Empty message from Discord: {:?}", &msg);
@@ -284,7 +286,9 @@ impl DiscordBridge {
                 .map(|(id, user)| (id, user.name.as_str()))
                 .collect(),
             &msg.mention_roles,
-        );
+            self.inner.as_ref().unwrap().cache.clone(),
+        )
+        .await;
 
         let tellraw_msg = tellraw_prefix()
             .then(Payload::text(&format!(
