@@ -10,7 +10,7 @@ mc-server-wrapper-lib = { path = "../mc-server-wrapper-lib" }
 structopt = "0.3"
 tokio = { version = "0.2", features = ["full"] }
 dotenv = "0.15"
-twilight = { git = "https://github.com/twilight-rs/twilight.git" }
+twilight = { branch = "trunk", git = "https://github.com/twilight-rs/twilight.git" }
 minecraft-chat = "0.1"
 log = "0.4"
 fern = { version = "0.6", features = ["colored"] }

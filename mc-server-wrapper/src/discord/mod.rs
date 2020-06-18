@@ -404,6 +404,7 @@ impl DiscordBridge {
     ///
     /// A new task is spawned to send the message, and its `JoinHandle` is
     /// returned so its completion can be `await`ed if desired.
+    // TODO: need to set channel topic way less frequently
     pub fn set_channel_topic<T: Into<String> + Send + 'static>(
         self,
         text: T,
