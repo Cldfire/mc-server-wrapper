@@ -37,6 +37,7 @@ pub fn tellraw_prefix() -> MessageBuilder {
 // TODO: this code is complicated, explore strategies to simplify?
 // TODO: does not handle escaped mentions (but this is a SUPER edge case and
 // the Discord client doesn't even handle those right either)
+// TODO: currently does not make use of cache to display nicknames
 pub async fn format_mentions_in<S: Into<String>>(
     content: S,
     mentions: HashMap<&UserId, &str>,

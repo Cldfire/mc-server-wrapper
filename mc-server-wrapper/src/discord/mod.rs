@@ -2,25 +2,29 @@ use log::{debug, info, warn};
 
 use twilight::{
     cache::{
-        twilight_cache_inmemory::config::{EventType, InMemoryConfigBuilder},
+        twilight_cache_inmemory::{
+            config::{EventType, InMemoryConfigBuilder},
+            model::CachedMember,
+        },
         InMemoryCache,
     },
     command_parser::{Command, CommandParserConfig, Parser},
     gateway::{Cluster, ClusterConfig, Event},
     http::Client as DiscordClient,
     model::{
-        channel::{message::MessageType, GuildChannel, Message},
+        channel::{message::MessageType, Message},
         gateway::GatewayIntents,
-        id::ChannelId,
+        id::{ChannelId, GuildId, UserId},
     },
 };
 
 use mc_server_wrapper_lib::{communication::*, parse::*};
 use minecraft_chat::{Color, Payload};
 
-use util::{format_mentions_in, format_online_players, tellraw_prefix};
+use util::{channel_name, format_mentions_in, format_online_players, tellraw_prefix};
 
 use crate::ONLINE_PLAYERS;
+use std::sync::Arc;
 use tokio::{stream::StreamExt, sync::mpsc::Sender};
 
 pub mod util;
@@ -97,7 +101,9 @@ impl DiscordBridge {
         let client = DiscordClient::new(&token);
         let cluster_config = ClusterConfig::builder(&token)
             .intents(Some(
-                GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILDS,
+                GatewayIntents::GUILDS
+                    | GatewayIntents::GUILD_MESSAGES
+                    | GatewayIntents::GUILD_MEMBERS,
             ))
             .build();
         let cluster = Cluster::new(cluster_config).await?;
@@ -114,7 +120,11 @@ impl DiscordBridge {
                     | EventType::GUILD_DELETE
                     | EventType::CHANNEL_CREATE
                     | EventType::CHANNEL_UPDATE
-                    | EventType::CHANNEL_DELETE,
+                    | EventType::CHANNEL_DELETE
+                    | EventType::MEMBER_ADD
+                    | EventType::MEMBER_CHUNK
+                    | EventType::MEMBER_REMOVE
+                    | EventType::MEMBER_UPDATE,
             )
             .build();
         let cache = InMemoryCache::from(cache_config);
@@ -142,6 +152,16 @@ impl DiscordBridge {
         self.inner.as_ref().map(|i| i.cluster.clone())
     }
 
+    /// Provides access to the `Client` inside this struct
+    pub fn client(&self) -> Option<DiscordClient> {
+        self.inner.as_ref().map(|i| i.client.clone())
+    }
+
+    /// Provides access to the `InMemoryCache` inside this struct
+    pub fn cache(&self) -> Option<InMemoryCache> {
+        self.inner.as_ref().map(|i| i.cache.clone())
+    }
+
     /// Constructs a command parser for Discord commands
     pub fn command_parser<'a>() -> Parser<'a> {
         let mut config = CommandParserConfig::new();
@@ -152,6 +172,53 @@ impl DiscordBridge {
         config.add_prefix("!mc ");
 
         Parser::new(config)
+    }
+
+    /// Gets and caches up to 50 guild members from the given guild
+    pub async fn get_and_cache_guild_members(&self, guild_id: GuildId) {
+        match self
+            .client()
+            .unwrap()
+            .guild_members(guild_id)
+            .limit(50)
+            .unwrap()
+            .await
+        {
+            Ok(members) => {
+                self.cache().unwrap().cache_members(guild_id, members).await;
+            }
+            Err(e) => {
+                log::warn!("Failed to get guild member info to store in cache: {}", e);
+            }
+        }
+    }
+
+    /// Get and cache the member specified by the given IDs
+    ///
+    /// The cached member will be returned so you can make use of the data right
+    /// away
+    pub async fn get_and_cache_guild_member(
+        &self,
+        guild_id: GuildId,
+        user_id: UserId,
+    ) -> anyhow::Result<Arc<CachedMember>> {
+        // TODO: this currently always errors and the error is failed to serialize
+        // (????)
+        let member = self
+            .client()
+            .unwrap()
+            .guild_member(guild_id, user_id)
+            .await?;
+
+        if let Some(member) = member {
+            Ok(self.cache().unwrap().cache_member(guild_id, member).await)
+        } else {
+            Err(anyhow::anyhow!(
+                "failed to find member for guild_id {} and user_id {}",
+                guild_id,
+                user_id
+            ))
+        }
     }
 
     /// Handle an event from Discord
@@ -171,20 +238,24 @@ impl DiscordBridge {
             (_, Event::GuildCreate(guild)) => {
                 // Log the name of the channel we're bridging to as well if it's
                 // in this guild
-                if let Some(channel_name) =
-                    guild
-                        .channels
-                        .get(&self.bridge_channel_id)
-                        .map_or(None, |c| match c {
-                            GuildChannel::Category(c) => Some(&c.name),
-                            GuildChannel::Text(c) => Some(&c.name),
-                            _ => None,
-                        })
+                if let Some(channel_name) = guild
+                    .channels
+                    .get(&self.bridge_channel_id)
+                    .and_then(|c| Some(channel_name(c)))
                 {
                     info!(
                         "Connected to guild {}, bridging chat to '#{}'",
                         guild.name, channel_name
                     );
+
+                    // This is the guild containing the channel we're bridging to. We want to
+                    // initially cache some (or all) of the members in the guild so that we can
+                    // later use the cached info to display nicknames when outputting Discord
+                    // messages in Minecraft
+                    let self_clone = self.clone();
+                    tokio::spawn(async move {
+                        self_clone.get_and_cache_guild_members(guild.id).await;
+                    });
                 } else {
                     info!("Connected to guild {}", guild.name);
                 }
@@ -279,6 +350,8 @@ impl DiscordBridge {
             return;
         }
 
+        let cache = self.cache().unwrap();
+
         let content = format_mentions_in(
             msg.content.clone(),
             msg.mentions
@@ -286,22 +359,55 @@ impl DiscordBridge {
                 .map(|(id, user)| (id, user.name.as_str()))
                 .collect(),
             &msg.mention_roles,
-            self.inner.as_ref().unwrap().cache.clone(),
+            cache.clone(),
         )
         .await;
 
+        // See if the author of this message has a nickname in the guild; if not just
+        // use their account name
+        let mut maybe_cached_member = match cache
+            .member(msg.guild_id.unwrap_or(GuildId(0)), msg.author.id)
+            .await
+        {
+            Ok(maybe_cached_member) => maybe_cached_member,
+            Err(e) => {
+                log::warn!("Failed to get guild member from cache: {}", e);
+                None
+            }
+        };
+
+        // The member wasn't cached; see if we can grab and cache their data with an API
+        // request
+        // TODO: this could block for a while
+        if maybe_cached_member.is_none() {
+            maybe_cached_member = match self
+                .get_and_cache_guild_member(msg.guild_id.unwrap_or(GuildId(0)), msg.author.id)
+                .await
+            {
+                Ok(member) => Some(member),
+                Err(e) => {
+                    log::warn!("Failed to get and cache guild member from Discord: {}", e);
+                    None
+                }
+            }
+        }
+
+        // Finally, use a nickname if we can get one, otherwise just use the message
+        // author's normal account name
+        let author_name = maybe_cached_member
+            .as_ref()
+            .and_then(|cached_member| cached_member.nick.as_ref())
+            .unwrap_or(&msg.author.name);
+
         let tellraw_msg = tellraw_prefix()
-            .then(Payload::text(&format!(
-                "<{}> {}",
-                &msg.author.name, &content
-            )))
+            .then(Payload::text(&format!("<{}> {}", author_name, &content)))
             .build();
 
         // Tellraw commands do not get logged to the console, so we
         // make up for that here
         ConsoleMsg::new(
             ConsoleMsgType::Info,
-            format!("{}<{}> {}", CHAT_PREFIX, &msg.author.name, &content),
+            format!("{}<{}> {}", CHAT_PREFIX, author_name, &content),
         )
         .log();
 

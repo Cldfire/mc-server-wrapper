@@ -21,7 +21,12 @@ Not production-ready, but getting there. Feel free to use it for non-critical se
 
 ## Discord bridge setup
 
-Register an application and a bot with [Discord](https://discordapp.com/developers/applications). Add the bot to the guild you want to bridge to and get the ID of the channel you want to bridge to (Google this for instructions). Provide the bot token and channel ID either through the CLI or through the evironment variables listed below:
+* Register an application and a bot with [Discord](https://discordapp.com/developers/applications)
+* Toggle `Server Members Intent` to on under `Privileged Gateway Intents`
+  * This is used to receive member updates from your guild (such as when someone changes their nickname so we can change the name we display in-game)
+* Add the bot to the guild you want to bridge to
+* Get the ID of the channel you want to bridge to (Google this for instructions)
+* Provide the bot token and channel ID either through the CLI or through the evironment variables listed below:
 
 ```
 DISCORD_TOKEN="..."
