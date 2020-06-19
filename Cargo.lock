@@ -790,6 +790,7 @@ dependencies = [
  "crossterm",
  "dotenv",
  "fern",
+ "futures",
  "log",
  "log-panics",
  "mc-server-wrapper-lib",

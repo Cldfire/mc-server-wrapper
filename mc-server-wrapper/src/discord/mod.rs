@@ -24,6 +24,7 @@ use minecraft_chat::{Color, Payload};
 use util::{channel_name, format_mentions_in, format_online_players, tellraw_prefix};
 
 use crate::ONLINE_PLAYERS;
+use futures::future;
 use std::{collections::HashMap, sync::Arc};
 use tokio::{stream::StreamExt, sync::mpsc::Sender};
 
@@ -384,16 +385,15 @@ impl DiscordBridge {
         }
 
         let cache = self.cache().unwrap();
+        let guild_id = msg.guild_id.unwrap_or(GuildId(0));
 
-        // Get info about mentioned members from the cache if available
-        let mut cached_mentioned_members = vec![];
-        for mention in &msg.mentions {
-            // TODO: this isn't very async right now :)
-            cached_mentioned_members.push(
-                self.obtain_guild_member(msg.guild_id.unwrap_or(GuildId(0)), mention.1.id)
-                    .await,
-            );
-        }
+        // Get info about mentioned members from the cache and / or API if available
+        let cached_mentioned_members = future::join_all(
+            msg.mentions
+                .keys()
+                .map(|id| async move { self.obtain_guild_member(guild_id, *id).await }),
+        )
+        .await;
 
         // Use the cached info to format mentions with the member's nickname if one is
         // set
@@ -417,9 +417,7 @@ impl DiscordBridge {
 
         // Similar process to above, getting cached info for the message author so we
         // can use their nickname if set
-        let cached_member = self
-            .obtain_guild_member(msg.guild_id.unwrap_or(GuildId(0)), msg.author.id)
-            .await;
+        let cached_member = self.obtain_guild_member(guild_id, msg.author.id).await;
 
         let author_name = cached_member
             .as_ref()
