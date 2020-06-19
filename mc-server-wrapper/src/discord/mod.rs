@@ -24,7 +24,7 @@ use minecraft_chat::{Color, Payload};
 use util::{channel_name, format_mentions_in, format_online_players, tellraw_prefix};
 
 use crate::ONLINE_PLAYERS;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::{stream::StreamExt, sync::mpsc::Sender};
 
 pub mod util;
@@ -196,7 +196,7 @@ impl DiscordBridge {
     /// Get and cache the member specified by the given IDs
     ///
     /// The cached member will be returned so you can make use of the data right
-    /// away
+    /// away.
     pub async fn get_and_cache_guild_member(
         &self,
         guild_id: GuildId,
@@ -206,7 +206,7 @@ impl DiscordBridge {
             Ok(maybe_member) => maybe_member,
             Err(e) => {
                 log::warn!(
-                    "Failed to get guild member for guild_id {} and user_id {}: {}",
+                    "Failed to get guild member from API for guild_id {} and user_id {}: {}",
                     guild_id,
                     user_id,
                     e
@@ -220,6 +220,41 @@ impl DiscordBridge {
         } else {
             None
         }
+    }
+
+    /// Get cached info for the guild member specified by the given IDs
+    ///
+    /// `None` will be returned if something went wrong.
+    ///
+    /// This method first checks the cache for the member and, if the member
+    /// isn't present, then performs an API request for the member's info,
+    /// caching it upon success for future runs.
+    pub async fn obtain_guild_member(
+        &self,
+        guild_id: GuildId,
+        user_id: UserId,
+    ) -> Option<Arc<CachedMember>> {
+        // First check the cache
+        let mut maybe_cached_member = match self.cache().unwrap().member(guild_id, user_id).await {
+            Ok(maybe_cached_member) => maybe_cached_member,
+            Err(e) => {
+                log::warn!(
+                    "Failed to get guild member from cache for guild_id {} and user_id {}: {}",
+                    guild_id,
+                    user_id,
+                    e
+                );
+                None
+            }
+        };
+
+        // The member wasn't cached; see if we can grab and cache their data with an API
+        // request
+        if maybe_cached_member.is_none() {
+            maybe_cached_member = self.get_and_cache_guild_member(guild_id, user_id).await;
+        }
+
+        maybe_cached_member
     }
 
     /// Handle an event from Discord
@@ -350,43 +385,45 @@ impl DiscordBridge {
 
         let cache = self.cache().unwrap();
 
+        // Get info about mentioned members from the cache if available
+        let mut cached_mentioned_members = vec![];
+        for mention in &msg.mentions {
+            // TODO: this isn't very async right now :)
+            cached_mentioned_members.push(
+                self.obtain_guild_member(msg.guild_id.unwrap_or(GuildId(0)), mention.1.id)
+                    .await,
+            );
+        }
+
+        // Use the cached info to format mentions with the member's nickname if one is
+        // set
+        let mut mentions_map = HashMap::new();
+        for (mention, cmm) in msg.mentions.iter().zip(cached_mentioned_members.iter()) {
+            mentions_map.insert(
+                *mention.0,
+                cmm.as_ref()
+                    .and_then(|cm| cm.nick.as_deref())
+                    .unwrap_or(mention.1.name.as_str()),
+            );
+        }
+
         let content = format_mentions_in(
             msg.content.clone(),
-            msg.mentions
-                .iter()
-                .map(|(id, user)| (id, user.name.as_str()))
-                .collect(),
+            mentions_map,
             &msg.mention_roles,
             cache.clone(),
         )
         .await;
 
-        // See if the author of this message has a nickname in the guild; if not just
-        // use their account name
-        let mut maybe_cached_member = match cache
-            .member(msg.guild_id.unwrap_or(GuildId(0)), msg.author.id)
-            .await
-        {
-            Ok(maybe_cached_member) => maybe_cached_member,
-            Err(e) => {
-                log::warn!("Failed to get guild member from cache: {}", e);
-                None
-            }
-        };
+        // Similar process to above, getting cached info for the message author so we
+        // can use their nickname if set
+        let cached_member = self
+            .obtain_guild_member(msg.guild_id.unwrap_or(GuildId(0)), msg.author.id)
+            .await;
 
-        // The member wasn't cached; see if we can grab and cache their data with an API
-        // request
-        if maybe_cached_member.is_none() {
-            maybe_cached_member = self
-                .get_and_cache_guild_member(msg.guild_id.unwrap_or(GuildId(0)), msg.author.id)
-                .await;
-        }
-
-        // Finally, use a nickname if we can get one, otherwise just use the message
-        // author's normal account name
-        let author_name = maybe_cached_member
+        let author_name = cached_member
             .as_ref()
-            .and_then(|cached_member| cached_member.nick.as_ref())
+            .and_then(|cm| cm.nick.as_ref())
             .unwrap_or(&msg.author.name);
 
         let tellraw_msg = tellraw_prefix()

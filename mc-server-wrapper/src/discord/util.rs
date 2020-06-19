@@ -30,17 +30,18 @@ pub fn tellraw_prefix() -> MessageBuilder {
 
 /// Formats mentions in the given content using the given info
 ///
-/// `mentions` maps mentioned user IDs to their names
+/// `mentions` maps mentioned user IDs to their names. It is your responsibility
+/// to handle nicknames and pass them in appropriately if that's something you
+/// care about.
 ///
 /// The given `cache` is used to get data to replace channel and role mention
 /// names with
 // TODO: this code is complicated, explore strategies to simplify?
 // TODO: does not handle escaped mentions (but this is a SUPER edge case and
 // the Discord client doesn't even handle those right either)
-// TODO: currently does not make use of cache to display nicknames
 pub async fn format_mentions_in<S: Into<String>>(
     content: S,
-    mentions: HashMap<&UserId, &str>,
+    mentions: HashMap<UserId, &str>,
     mention_roles: &[RoleId],
     cache: InMemoryCache,
 ) -> String {
@@ -338,7 +339,7 @@ mod test {
         async fn one_mention_with_info() {
             let msg = "this has a mention: <@123>, and we are passing mentions";
             let mut mentions = HashMap::new();
-            mentions.insert(&UserId(123), "TestName");
+            mentions.insert(UserId(123), "TestName");
 
             let formatted = format_mentions_in(msg, mentions, &[], InMemoryCache::new()).await;
             assert_eq!(
@@ -351,8 +352,8 @@ mod test {
         async fn two_mentions_with_info() {
             let msg = "<@123>, and even <@!321>!";
             let mut mentions = HashMap::new();
-            mentions.insert(&UserId(123), "TestName");
-            mentions.insert(&UserId(321), "AnotherTest");
+            mentions.insert(UserId(123), "TestName");
+            mentions.insert(UserId(321), "AnotherTest");
 
             let formatted = format_mentions_in(msg, mentions, &[], InMemoryCache::new()).await;
             assert_eq!(formatted, "@TestName, and even @AnotherTest!");
@@ -362,8 +363,8 @@ mod test {
         async fn three_mentions_some_with_info() {
             let msg = "<@123>, and even <@!321>, and wow: <@3234>";
             let mut mentions = HashMap::new();
-            mentions.insert(&UserId(123), "TestName");
-            mentions.insert(&UserId(3234), "WowTest");
+            mentions.insert(UserId(123), "TestName");
+            mentions.insert(UserId(3234), "WowTest");
 
             let formatted = format_mentions_in(msg, mentions, &[], InMemoryCache::new()).await;
             assert_eq!(formatted, "@TestName, and even <@!321>, and wow: @WowTest");
@@ -443,7 +444,7 @@ mod test {
             let msg = "<@1212> this channel (<#1234>) is pretty cool for the role <@&2345>!";
 
             let mut mentions = HashMap::new();
-            mentions.insert(&UserId(1212), "TestName");
+            mentions.insert(UserId(1212), "TestName");
 
             let cache = InMemoryCache::new();
             cache.cache_role(GuildId(0), make_role()).await;
