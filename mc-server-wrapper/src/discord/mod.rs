@@ -201,23 +201,24 @@ impl DiscordBridge {
         &self,
         guild_id: GuildId,
         user_id: UserId,
-    ) -> anyhow::Result<Arc<CachedMember>> {
-        // TODO: this currently always errors and the error is failed to serialize
-        // (????)
-        let member = self
-            .client()
-            .unwrap()
-            .guild_member(guild_id, user_id)
-            .await?;
+    ) -> Option<Arc<CachedMember>> {
+        let maybe_member = match self.client().unwrap().guild_member(guild_id, user_id).await {
+            Ok(maybe_member) => maybe_member,
+            Err(e) => {
+                log::warn!(
+                    "Failed to get guild member for guild_id {} and user_id {}: {}",
+                    guild_id,
+                    user_id,
+                    e
+                );
+                None
+            }
+        };
 
-        if let Some(member) = member {
-            Ok(self.cache().unwrap().cache_member(guild_id, member).await)
+        if let Some(member) = maybe_member {
+            Some(self.cache().unwrap().cache_member(guild_id, member).await)
         } else {
-            Err(anyhow::anyhow!(
-                "failed to find member for guild_id {} and user_id {}",
-                guild_id,
-                user_id
-            ))
+            None
         }
     }
 
@@ -252,10 +253,7 @@ impl DiscordBridge {
                     // initially cache some (or all) of the members in the guild so that we can
                     // later use the cached info to display nicknames when outputting Discord
                     // messages in Minecraft
-                    let self_clone = self.clone();
-                    tokio::spawn(async move {
-                        self_clone.get_and_cache_guild_members(guild.id).await;
-                    });
+                    self.get_and_cache_guild_members(guild.id).await;
                 } else {
                     info!("Connected to guild {}", guild.name);
                 }
@@ -378,18 +376,10 @@ impl DiscordBridge {
 
         // The member wasn't cached; see if we can grab and cache their data with an API
         // request
-        // TODO: this could block for a while
         if maybe_cached_member.is_none() {
-            maybe_cached_member = match self
+            maybe_cached_member = self
                 .get_and_cache_guild_member(msg.guild_id.unwrap_or(GuildId(0)), msg.author.id)
-                .await
-            {
-                Ok(member) => Some(member),
-                Err(e) => {
-                    log::warn!("Failed to get and cache guild member from Discord: {}", e);
-                    None
-                }
-            }
+                .await;
         }
 
         // Finally, use a nickname if we can get one, otherwise just use the message
@@ -495,11 +485,9 @@ impl DiscordBridge {
                             "Attempted to send invalid message to Discord: {}",
                             validation_err
                         );
-                        // TODO: we should log the invalid message content here,
-                        // but the current
-                        // design of twilight makes it difficult to do that (the
-                        // message content is moved and
-                        // the error doesn't return it)
+                        // TODO: log message content that failed to validate
+                        // when twilight
+                        // returns ownership of it
                     }
                 }
             }
