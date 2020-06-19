@@ -47,6 +47,7 @@ pub async fn format_mentions_in<S: Into<String>>(
 ) -> String {
     enum MentionType {
         User,
+        UserNickname,
         Channel,
         Role,
         Unknown,
@@ -86,8 +87,7 @@ pub async fn format_mentions_in<S: Into<String>>(
         if let Some(slice) = content_slice.get(idx..idx + 3) {
             // Note that the order of evaluation here matters
             if slice.starts_with("<@!") {
-                // TODO: I think this should be `MentionType::BotUser`?
-                mention_type = MentionType::User;
+                mention_type = MentionType::UserNickname;
                 possible_id_after(idx + 3);
             } else if slice.starts_with("<@&") {
                 mention_type = MentionType::Role;
@@ -120,7 +120,8 @@ pub async fn format_mentions_in<S: Into<String>>(
             };
 
             match mention_type {
-                MentionType::User => {
+                // TODO: we should not format `MentionType::User` with the user's nick
+                MentionType::User | MentionType::UserNickname => {
                     if let Some(name) = mentions
                         .iter()
                         .find(|(user_id, _)| id == user_id.0)
