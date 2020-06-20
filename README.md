@@ -52,6 +52,12 @@ The binary for this project is built on top of a library; if you want to impleme
 cargo run --example basic -- path/to/server.jar
 ```
 
+## Screenshot
+
+Early screenshot, subject to change:
+
+![demo screenshot showing off the TUI](tui-demo.png)
+
 #### License
 
 <sup>
