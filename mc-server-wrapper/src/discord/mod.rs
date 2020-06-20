@@ -19,7 +19,7 @@ use twilight::{
 };
 
 use mc_server_wrapper_lib::{communication::*, parse::*};
-use minecraft_chat::{Color, Payload};
+use minecraft_protocol::chat::{Color, Payload};
 
 use util::{channel_name, format_mentions_in, format_online_players, tellraw_prefix};
 
@@ -521,8 +521,7 @@ impl DiscordBridge {
                             validation_err
                         );
                         // TODO: log message content that failed to validate
-                        // when twilight
-                        // returns ownership of it
+                        // when twilight returns ownership of it
                     }
                 }
             }

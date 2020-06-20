@@ -12,7 +12,7 @@ tokio = { version = "0.2", features = ["full"] }
 futures = "0.3"
 dotenv = "0.15"
 twilight = { branch = "trunk", git = "https://github.com/twilight-rs/twilight.git" }
-minecraft-chat = "0.1"
+minecraft-protocol = "0.1"
 log = "0.4"
 fern = { version = "0.6", features = ["colored"] }
 log-panics = "2.0"

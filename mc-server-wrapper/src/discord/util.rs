@@ -1,5 +1,5 @@
 use super::CHAT_PREFIX;
-use minecraft_chat::{Color, MessageBuilder, Payload};
+use minecraft_protocol::chat::{Color, MessageBuilder, Payload};
 use std::collections::{HashMap, HashSet};
 use twilight::{
     cache::InMemoryCache,
@@ -121,6 +121,7 @@ pub async fn format_mentions_in<S: Into<String>>(
 
             match mention_type {
                 // TODO: we should not format `MentionType::User` with the user's nick
+                // ...but it looks like Discord doesn't really follow this convention so hm
                 MentionType::User | MentionType::UserNickname => {
                     if let Some(name) = mentions
                         .iter()
