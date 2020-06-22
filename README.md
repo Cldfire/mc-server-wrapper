@@ -8,6 +8,7 @@ Not production-ready, but getting there. Feel free to use it for non-critical se
 
 ## Features
 
+* Runs on Linux, macOS, and Windows
 * Optionally enabled bi-directional Discord chat bridge (see [Discord Bridge Setup](#discord-bridge-setup))
     * Commands (prefixed by `!mc`):
         * `list`: replies with a list of people playing Minecraft
