@@ -13,7 +13,7 @@ use twilight::{
     http::Client as DiscordClient,
     model::{
         channel::{message::MessageType, Message},
-        gateway::GatewayIntents,
+        gateway::{payload::RequestGuildMembers, GatewayIntents},
         id::{ChannelId, GuildId, UserId},
     },
 };
@@ -175,25 +175,6 @@ impl DiscordBridge {
         Parser::new(config)
     }
 
-    /// Gets and caches up to 50 guild members from the given guild
-    pub async fn get_and_cache_guild_members(&self, guild_id: GuildId) {
-        match self
-            .client()
-            .unwrap()
-            .guild_members(guild_id)
-            .limit(50)
-            .unwrap()
-            .await
-        {
-            Ok(members) => {
-                self.cache().unwrap().cache_members(guild_id, members).await;
-            }
-            Err(e) => {
-                log::warn!("Failed to get guild member info to store in cache: {}", e);
-            }
-        }
-    }
-
     /// Get and cache the member specified by the given IDs
     ///
     /// The cached member will be returned so you can make use of the data right
@@ -272,7 +253,7 @@ impl DiscordBridge {
             (_, Event::Ready(_)) => {
                 info!("Discord bridge online");
             }
-            (_, Event::GuildCreate(guild)) => {
+            (shard_id, Event::GuildCreate(guild)) => {
                 // Log the name of the channel we're bridging to as well if it's
                 // in this guild
                 if let Some(channel_name) = guild
@@ -286,10 +267,15 @@ impl DiscordBridge {
                     );
 
                     // This is the guild containing the channel we're bridging to. We want to
-                    // initially cache some (or all) of the members in the guild so that we can
-                    // later use the cached info to display nicknames when outputting Discord
-                    // messages in Minecraft
-                    self.get_and_cache_guild_members(guild.id).await;
+                    // initially cache all of the members in the guild so that we can later use
+                    // the cached info to display nicknames when outputting Discord messages in
+                    // Minecraft
+                    // TODO: if bigger servers start using this it might be undesirable to cache
+                    // all member info right out of the gate
+                    self.cluster()
+                        .unwrap()
+                        .command(shard_id, &RequestGuildMembers::new_all(guild.id, None))
+                        .await?;
                 } else {
                     info!("Connected to guild {}", guild.name);
                 }
@@ -332,6 +318,7 @@ impl DiscordBridge {
     }
 
     /// Handles any attachments in the given message
+    // TODO: doesn't handle nicknames
     async fn handle_attachments_in_msg(
         &self,
         msg: &Message,
@@ -443,6 +430,7 @@ impl DiscordBridge {
     }
 
     /// Handles any embeds in the given message
+    // TODO: doesn't handle nicknames
     async fn handle_embeds_in_msg(&self, msg: &Message, mut mc_cmd_sender: Sender<ServerCommand>) {
         for embed in msg.embeds.iter().filter(|e| e.url.is_some()) {
             // TODO: this is kinda ugly
