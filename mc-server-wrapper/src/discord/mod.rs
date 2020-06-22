@@ -285,6 +285,14 @@ impl DiscordBridge {
                     && !msg.author.bot
                     && msg.channel_id == self.bridge_channel_id
                 {
+                    let cached_member = self
+                        .obtain_guild_member(msg.guild_id.unwrap_or(GuildId(0)), msg.author.id)
+                        .await;
+                    let author_display_name = cached_member
+                        .as_ref()
+                        .and_then(|cm| cm.nick.as_ref())
+                        .unwrap_or(&msg.author.name);
+
                     if let Some(command) = cmd_parser.parse(&msg.content) {
                         match command {
                             Command { name: "list", .. } => {
@@ -301,14 +309,20 @@ impl DiscordBridge {
                         return Ok(());
                     }
 
-                    self.handle_attachments_in_msg(&msg, mc_cmd_sender.clone())
-                        .await;
+                    self.handle_attachments_in_msg(
+                        &msg,
+                        &author_display_name,
+                        mc_cmd_sender.clone(),
+                    )
+                    .await;
 
-                    self.handle_msg_content(&msg, mc_cmd_sender.clone()).await;
+                    self.handle_msg_content(&msg, &author_display_name, mc_cmd_sender.clone())
+                        .await;
 
                     // We handle embeds after the message contents to replicate
                     // Discord's layout (embeds after message)
-                    self.handle_embeds_in_msg(&msg, mc_cmd_sender).await;
+                    self.handle_embeds_in_msg(&msg, &author_display_name, mc_cmd_sender)
+                        .await;
                 }
             }
             _ => {}
@@ -318,10 +332,10 @@ impl DiscordBridge {
     }
 
     /// Handles any attachments in the given message
-    // TODO: doesn't handle nicknames
     async fn handle_attachments_in_msg(
         &self,
         msg: &Message,
+        author_display_name: &str,
         mut mc_cmd_sender: Sender<ServerCommand>,
     ) {
         for attachment in &msg.attachments {
@@ -332,7 +346,7 @@ impl DiscordBridge {
             };
 
             let tellraw_msg = tellraw_prefix()
-                .then(Payload::text(&format!("{} uploaded ", &msg.author.name)))
+                .then(Payload::text(&format!("{} uploaded ", author_display_name)))
                 .italic(true)
                 .color(Color::Gray)
                 .then(Payload::text(type_str))
@@ -350,7 +364,7 @@ impl DiscordBridge {
                 ConsoleMsgType::Info,
                 format!(
                     "{}{} uploaded {}: {}",
-                    CHAT_PREFIX, &msg.author.name, type_str, attachment.url
+                    CHAT_PREFIX, author_display_name, type_str, attachment.url
                 ),
             )
             .log();
@@ -365,7 +379,12 @@ impl DiscordBridge {
     /// Handles the content of the message
     ///
     /// This can only be called if `self.inner` is `Some`
-    async fn handle_msg_content(&self, msg: &Message, mut mc_cmd_sender: Sender<ServerCommand>) {
+    async fn handle_msg_content(
+        &self,
+        msg: &Message,
+        author_display_name: &str,
+        mut mc_cmd_sender: Sender<ServerCommand>,
+    ) {
         if msg.content.is_empty() {
             debug!("Empty message from Discord: {:?}", &msg);
             return;
@@ -402,24 +421,18 @@ impl DiscordBridge {
         )
         .await;
 
-        // Similar process to above, getting cached info for the message author so we
-        // can use their nickname if set
-        let cached_member = self.obtain_guild_member(guild_id, msg.author.id).await;
-
-        let author_name = cached_member
-            .as_ref()
-            .and_then(|cm| cm.nick.as_ref())
-            .unwrap_or(&msg.author.name);
-
         let tellraw_msg = tellraw_prefix()
-            .then(Payload::text(&format!("<{}> {}", author_name, &content)))
+            .then(Payload::text(&format!(
+                "<{}> {}",
+                author_display_name, &content
+            )))
             .build();
 
         // Tellraw commands do not get logged to the console, so we
         // make up for that here
         ConsoleMsg::new(
             ConsoleMsgType::Info,
-            format!("{}<{}> {}", CHAT_PREFIX, author_name, &content),
+            format!("{}<{}> {}", CHAT_PREFIX, author_display_name, &content),
         )
         .log();
 
@@ -430,8 +443,12 @@ impl DiscordBridge {
     }
 
     /// Handles any embeds in the given message
-    // TODO: doesn't handle nicknames
-    async fn handle_embeds_in_msg(&self, msg: &Message, mut mc_cmd_sender: Sender<ServerCommand>) {
+    async fn handle_embeds_in_msg(
+        &self,
+        msg: &Message,
+        author_display_name: &str,
+        mut mc_cmd_sender: Sender<ServerCommand>,
+    ) {
         for embed in msg.embeds.iter().filter(|e| e.url.is_some()) {
             // TODO: this is kinda ugly
             let link_text = if embed.title.is_some() && embed.provider.is_some() {
@@ -449,7 +466,7 @@ impl DiscordBridge {
             };
 
             let tellraw_msg = tellraw_prefix()
-                .then(Payload::text(&format!("{} linked \"", &msg.author.name)))
+                .then(Payload::text(&format!("{} linked \"", author_display_name)))
                 .italic(true)
                 .color(Color::Gray)
                 .then(Payload::text(&link_text))
@@ -468,7 +485,7 @@ impl DiscordBridge {
                 format!(
                     "{}{} linked \"{}\": {}",
                     CHAT_PREFIX,
-                    &msg.author.name,
+                    author_display_name,
                     link_text,
                     embed.url.as_ref().unwrap()
                 ),
