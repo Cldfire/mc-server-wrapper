@@ -259,7 +259,7 @@ impl DiscordBridge {
                 if let Some(channel_name) = guild
                     .channels
                     .get(&self.bridge_channel_id)
-                    .and_then(|c| Some(channel_name(c)))
+                    .map(|c| channel_name(c))
                 {
                     info!(
                         "Connected to guild {}, bridging chat to '#{}'",
@@ -409,7 +409,7 @@ impl DiscordBridge {
                 *mention.0,
                 cmm.as_ref()
                     .and_then(|cm| cm.nick.as_deref())
-                    .unwrap_or(mention.1.name.as_str()),
+                    .unwrap_or_else(|| mention.1.name.as_str()),
             );
         }
 

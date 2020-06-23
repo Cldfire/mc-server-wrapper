@@ -190,18 +190,16 @@ impl McServerManager {
                         let config = if let Some(config) = config {
                             current_config = Some(config);
                             current_config.as_ref().unwrap()
+                        } else if let Some(current_config) = &current_config {
+                            current_config
                         } else {
-                            if let Some(current_config) = &current_config {
-                                current_config
-                            } else {
-                                event_sender
-                                    .send(ServerEvent::StartServerResult(Err(
-                                        McServerStartError::NoPreviousConfig,
-                                    )))
-                                    .await
-                                    .unwrap();
-                                continue;
-                            }
+                            event_sender
+                                .send(ServerEvent::StartServerResult(Err(
+                                    McServerStartError::NoPreviousConfig,
+                                )))
+                                .await
+                                .unwrap();
+                            continue;
                         };
 
                         let (child, rx) = match McServerInternal::setup_server(config) {
