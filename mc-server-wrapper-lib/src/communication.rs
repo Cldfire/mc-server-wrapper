@@ -1,10 +1,9 @@
-use crate::parse::*;
+use crate::{parse::*, McServerConfig, McServerStartError};
 
 use std::{io, process::ExitStatus};
 
 /// Events from a Minecraft server.
 // TODO: derive serialize, deserialize
-// TODO: move to different file
 // TODO: restructure so there are two main variants: stuff you get directly
 // from the server, and stuff more related to management
 #[derive(Debug)]
@@ -32,6 +31,8 @@ pub enum ServerEvent {
 
     /// Response to `AgreeToEula`
     AgreeToEulaResult(io::Result<()>),
+    /// Response to `StartServer`
+    StartServerResult(Result<(), McServerStartError>),
 }
 
 /// Commands that can be sent over channels to be performed by the MC server.
@@ -54,8 +55,11 @@ pub enum ServerCommand {
 
     /// Agree to the EULA (required to run the server)
     AgreeToEula,
-    /// Start the Minecraft server (if it is stopped)
-    StartServer,
+    /// Start the Minecraft server with the given config
+    ///
+    /// If no config is provided, the manager will use the previously provided
+    /// config (if there was one)
+    StartServer { config: Option<McServerConfig> },
     /// Stop the Minecraft server (if it is running)
     ///
     /// Setting `forever` to true will cause the `McServer` instance to stop

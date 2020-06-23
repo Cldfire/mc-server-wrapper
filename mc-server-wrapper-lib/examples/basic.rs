@@ -14,7 +14,7 @@ use tokio::stream::StreamExt;
 
 use structopt::StructOpt;
 
-use mc_server_wrapper_lib::{communication::*, McServer, McServerConfig};
+use mc_server_wrapper_lib::{communication::*, McServerConfig, McServerManager};
 
 #[derive(StructOpt, Debug)]
 pub struct Opt {
@@ -27,17 +27,16 @@ pub struct Opt {
 async fn main() {
     let opt = Opt::from_args();
 
-    let mc_config = McServerConfig::new(opt.server_path.clone(), 1024, None, true);
-    let mut mc_server = McServer::new(mc_config).expect("minecraft server config was not valid");
-    mc_server
-        .cmd_sender
-        .send(ServerCommand::StartServer)
+    let config = McServerConfig::new(opt.server_path.clone(), 1024, None, true);
+    let (_, mut cmd_sender, mut event_receiver) = McServerManager::new();
+    cmd_sender
+        .send(ServerCommand::StartServer {
+            config: Some(config),
+        })
         .await
         .unwrap();
 
-    // TODO: this loop currently never exists :( need to re-work library design
-    // to fix that when I have time
-    while let Some(e) = mc_server.event_receiver.next().await {
+    while let Some(e) = event_receiver.next().await {
         match e {
             ServerEvent::ConsoleEvent(console_msg, Some(specific_msg)) => {
                 println!("{}", console_msg);
@@ -57,11 +56,7 @@ async fn main() {
             ServerEvent::ServerStopped(process_result, reason) => {
                 if let Some(ShutdownReason::EulaNotAccepted) = reason {
                     println!("Agreeing to EULA!");
-                    mc_server
-                        .cmd_sender
-                        .send(ServerCommand::AgreeToEula)
-                        .await
-                        .unwrap();
+                    cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();
                 } else {
                     match process_result {
                         Ok(exit_status) => {
@@ -74,8 +69,7 @@ async fn main() {
 
                     // Note that this example does not implement any kind of restart-after-crash
                     // functionality
-                    mc_server
-                        .cmd_sender
+                    cmd_sender
                         .send(ServerCommand::StopServer { forever: true })
                         .await
                         .unwrap();
@@ -85,15 +79,22 @@ async fn main() {
             ServerEvent::AgreeToEulaResult(res) => {
                 if let Err(e) = res {
                     eprintln!("Failed to agree to EULA: {:?}", e);
-                    mc_server
-                        .cmd_sender
+                    cmd_sender
                         .send(ServerCommand::StopServer { forever: true })
                         .await
                         .unwrap();
                 } else {
-                    mc_server
-                        .cmd_sender
-                        .send(ServerCommand::StartServer)
+                    cmd_sender
+                        .send(ServerCommand::StartServer { config: None })
+                        .await
+                        .unwrap();
+                }
+            }
+            ServerEvent::StartServerResult(res) => {
+                if let Err(e) = res {
+                    eprintln!("Failed to start the Minecraft server: {}", e);
+                    cmd_sender
+                        .send(ServerCommand::StopServer { forever: true })
                         .await
                         .unwrap();
                 }

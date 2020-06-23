@@ -13,7 +13,7 @@ use scopeguard::defer;
 use twilight::model::id::ChannelId;
 
 use mc_server_wrapper_lib::{
-    communication::*, parse::*, McServer, McServerConfig, CONSOLE_MSG_LOG_TARGET,
+    communication::*, parse::*, McServerConfig, McServerManager, CONSOLE_MSG_LOG_TARGET,
 };
 
 use dotenv::dotenv;
@@ -125,8 +125,16 @@ async fn main() -> anyhow::Result<()> {
     .with_context(|| "Failed to set up logging")?;
 
     let mc_config = McServerConfig::new(opt.server_path.clone(), opt.memory, opt.jvm_flags, false);
-    // TODO: don't expect here
-    let mut mc_server = McServer::new(mc_config)?;
+    let (mc_server, mut mc_cmd_sender, mut mc_event_receiver) = McServerManager::new();
+
+    info!("Starting the Minecraft server");
+    mc_cmd_sender
+        .send(ServerCommand::StartServer {
+            config: Some(mc_config),
+        })
+        .await
+        .unwrap();
+    let mut last_start_time = Instant::now();
 
     // TODO: start drawing UI before setting up discord
     let discord = if opt.bridge_to_discord {
@@ -145,7 +153,7 @@ async fn main() -> anyhow::Result<()> {
         setup_discord(
             opt.discord_token.unwrap(),
             ChannelId(opt.discord_channel_id.unwrap()),
-            mc_server.cmd_sender.clone(),
+            mc_cmd_sender.clone(),
         )
         .await
         .with_context(|| "Failed to connect to Discord")?
@@ -153,16 +161,7 @@ async fn main() -> anyhow::Result<()> {
         DiscordBridge::new_noop()
     };
 
-    info!("Starting the Minecraft server");
-    mc_server
-        .cmd_sender
-        .send(ServerCommand::StartServer)
-        .await
-        .unwrap();
-    let mut last_start_time = Instant::now();
     let mut term_events = EventStream::new();
-    // TODO: we should not need this
-    let mut should_exit_loop = false;
 
     // This loop handles both user input and events from the Minecraft server
     loop {
@@ -184,12 +183,8 @@ async fn main() -> anyhow::Result<()> {
             ))
             .unwrap();
 
-        if should_exit_loop == true {
-            break;
-        }
-
         tokio::select! {
-            e = mc_server.event_receiver.next() => if let Some(e) = e {
+            e = mc_event_receiver.next() => if let Some(e) = e {
                 match e {
                     ServerEvent::ConsoleEvent(console_msg, Some(specific_msg)) => {
                         if let ConsoleMsgType::Unknown(ref s) = console_msg.msg_type {
@@ -251,7 +246,7 @@ async fn main() -> anyhow::Result<()> {
 
                         if let Some(ShutdownReason::EulaNotAccepted) = reason {
                             info!("Agreeing to EULA!");
-                            mc_server.cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();
+                            mc_cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();
                         } else {
                             let mut sent_restart_command = false;
 
@@ -279,7 +274,7 @@ async fn main() -> anyhow::Result<()> {
                                         // TODO: make this configurable
                                         // TODO: maybe parse logs for things that definitely indicate a crash?
                                         if last_start_time.elapsed().as_secs() > 300 {
-                                            mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                                            mc_cmd_sender.send(ServerCommand::StartServer { config: None }).await.unwrap();
 
                                             last_start_time = Instant::now();
                                             sent_restart_command = true;
@@ -305,17 +300,23 @@ async fn main() -> anyhow::Result<()> {
                     ServerEvent::AgreeToEulaResult(res) => {
                         if let Err(e) = res {
                             error!("Failed to agree to EULA: {:?}", e);
-                            mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                            should_exit_loop = true;
+                            mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                         } else {
-                            mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                            mc_cmd_sender.send(ServerCommand::StartServer { config: None }).await.unwrap();
                             last_start_time = Instant::now();
+                        }
+                    }
+                    ServerEvent::StartServerResult(res) => {
+                        // TODO: it's impossible to read start failures right now because the TUI
+                        // leaves the alternate screen right away and the logs are gone
+                        if let Err(e) = res {
+                            error!("Failed to start the Minecraft server: {}", e);
+                            mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                         }
                     }
                 }
             } else {
-                // TODO: this should be reachable, need to re-work library design
-                unreachable!();
+                break;
             },
             Some(record) = log_receiver.next() => {
                 tui_state.logs_state.add_record(record);
@@ -327,19 +328,18 @@ async fn main() -> anyhow::Result<()> {
                             match key_event.code {
                                 KeyCode::Enter => {
                                     if mc_server.running().await {
-                                        mc_server.cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.input_state.value().to_string())).await.unwrap();
+                                        mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.input_state.value().to_string())).await.unwrap();
                                     } else {
                                         // TODO: create a command parser for user input?
                                         // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe
                                         match tui_state.input_state.value() {
                                             "start" => {
                                                 info!("Starting the Minecraft server");
-                                                mc_server.cmd_sender.send(ServerCommand::StartServer).await.unwrap();
+                                                mc_cmd_sender.send(ServerCommand::StartServer { config: None }).await.unwrap();
                                                 last_start_time = Instant::now();
                                             },
                                             "stop" => {
-                                                mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                                                should_exit_loop = true;
+                                                mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                                             },
                                             _ => {}
                                         }
@@ -358,7 +358,7 @@ async fn main() -> anyhow::Result<()> {
                     },
                     None => {
                         // TODO: need to make sure that after this is reached it isn't reached again
-                        mc_server.cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                        mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                     },
                 }
             },
