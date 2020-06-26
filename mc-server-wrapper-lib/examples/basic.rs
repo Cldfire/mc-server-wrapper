@@ -27,8 +27,8 @@ pub struct Opt {
 async fn main() {
     let opt = Opt::from_args();
 
-    let config = McServerConfig::new(opt.server_path.clone(), 1024, None, true);
-    let (_, mut cmd_sender, mut event_receiver) = McServerManager::new();
+    let config = McServerConfig::new(opt.server_path.clone(), 1024, false, None, None, true);
+    let (_, mut cmd_sender, mut event_receiver) = McServerManager::new().await;
     cmd_sender
         .send(ServerCommand::StartServer {
             config: Some(config),
@@ -99,6 +99,7 @@ async fn main() {
                         .unwrap();
                 }
             }
+            _ => {}
         }
     }
 }

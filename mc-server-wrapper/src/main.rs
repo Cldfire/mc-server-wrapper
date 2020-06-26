@@ -65,6 +65,10 @@ pub struct Opt {
     #[structopt(short = "b", long)]
     bridge_to_discord: bool,
 
+    /// Enable JMX monitoring
+    #[structopt(short = "j", long)]
+    enable_jmx: bool,
+
     /// Amount of memory in megabytes to allocate for the server
     #[structopt(short = "m", long, default_value = "1024")]
     memory: u16,
@@ -124,10 +128,20 @@ async fn main() -> anyhow::Result<()> {
     )
     .with_context(|| "Failed to set up logging")?;
 
-    let mc_config = McServerConfig::new(opt.server_path.clone(), opt.memory, opt.jvm_flags, false);
-    let (mc_server, mut mc_cmd_sender, mut mc_event_receiver) = McServerManager::new();
-
     info!("Starting the Minecraft server");
+    if let Some(jvm_flags) = opt.jvm_flags.as_ref() {
+        info!("Custom JVM flags: {}", jvm_flags);
+    }
+    let mc_config = McServerConfig::new(
+        opt.server_path.clone(),
+        opt.memory,
+        opt.enable_jmx,
+        None,
+        opt.jvm_flags,
+        false,
+    );
+    let (mc_server, mut mc_cmd_sender, mut mc_event_receiver) = McServerManager::new().await;
+
     mc_cmd_sender
         .send(ServerCommand::StartServer {
             config: Some(mc_config),
@@ -314,6 +328,19 @@ async fn main() -> anyhow::Result<()> {
                             mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
                         }
                     }
+
+                    ServerEvent::GetAverageTickTimeResult(res) => {
+                        match res {
+                            Ok(time) => info!("Average tick time: {}", time),
+                            Err(e) => error!("Failed to get average tick time: {}", e),
+                        }
+                    }
+                    ServerEvent::GetTickTimesResult(res) => {
+                        match res {
+                            Ok(time) => info!("Tick times: {:?}", time),
+                            Err(e) => error!("Failed to get tick times: {}", e),
+                        }
+                    }
                 }
             } else {
                 break;
@@ -328,7 +355,11 @@ async fn main() -> anyhow::Result<()> {
                             match key_event.code {
                                 KeyCode::Enter => {
                                     if mc_server.running().await {
-                                        mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.input_state.value().to_string())).await.unwrap();
+                                        match tui_state.input_state.value() {
+                                            "avgtick" => mc_cmd_sender.send(ServerCommand::GetAverageTickTime).await.unwrap(),
+                                            "ticktimes" => mc_cmd_sender.send(ServerCommand::GetTickTimes).await.unwrap(),
+                                            _ => mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.input_state.value().to_string())).await.unwrap(),
+                                        }
                                     } else {
                                         // TODO: create a command parser for user input?
                                         // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe

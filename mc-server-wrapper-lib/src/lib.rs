@@ -7,6 +7,8 @@ use tokio::{
     sync::{mpsc, oneshot, Mutex},
 };
 
+use jmx::{MBeanAddress, MBeanClient, MBeanClientTrait};
+
 use thiserror::Error;
 
 use once_cell::sync::OnceCell;
@@ -43,6 +45,25 @@ pub struct McServerConfig {
     server_path: PathBuf,
     /// The amount of memory in megabytes to allocate for the server
     memory: u16,
+    /// Whether or not JMX monitoring should be enabled for the Minecraft server
+    ///
+    /// `enable-jmx-monitoring` must be set to `true` in the server's
+    /// `server.properties` file.
+    ///
+    /// // TODO: what does this let you do
+    ///
+    /// Setting this to `true` will cause the following arguments to be appended
+    /// to `jvm_flags`:
+    ///
+    /// * `-Dcom.sun.management.jmxremote`
+    /// * `-Dcom.sun.management.jmxremote.port=1099`
+    /// * `-Dcom.sun.management.jmxremote.authenticate=false`
+    /// * `-Dcom.sun.management.jmxremote.ssl=false`
+    ///
+    /// The port can be controlled via `jmx_port`.
+    enable_jmx: bool,
+    /// The port to bind the Minecraft server's JMX server to
+    jmx_port: Option<u16>,
     /// Custom flags to pass to the JVM
     jvm_flags: Option<String>,
     /// Whether or not the server's `stdin` should be inherited from the parent
@@ -70,13 +91,27 @@ impl McServerConfig {
     pub fn new<P: Into<PathBuf>>(
         server_path: P,
         memory: u16,
+        enable_jmx: bool,
+        jmx_port: Option<u16>,
         jvm_flags: Option<String>,
         inherit_stdin: bool,
     ) -> Self {
         let server_path = server_path.into();
+        let jmx_flags = " -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=1099 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false";
+
+        let jvm_flags = if enable_jmx {
+            let mut temp = jvm_flags.unwrap_or_default();
+            temp.push_str(jmx_flags);
+            Some(temp)
+        } else {
+            jvm_flags
+        };
+
         McServerConfig {
             server_path,
             memory,
+            enable_jmx,
+            jmx_port,
             jvm_flags,
             inherit_stdin,
         }
@@ -104,6 +139,10 @@ pub enum McServerStartError {
     ConfigError(#[from] McServerConfigError),
     #[error("io error: {0}")]
     IoError(#[from] io::Error),
+    /// Unfortunately `jmx::Error` doesn't implement `std::error::Error` so the best
+    /// we can do here for now is give you an error string
+    #[error("jmx error: {0}")]
+    JmxError(String),
     #[error(
         "no config provided with the request to start the server and no previous \
         config existed"
@@ -126,7 +165,7 @@ impl McServerManager {
     ///
     /// Commands that require the server to be running to do anything will be
     /// ignored.
-    pub fn new() -> (
+    pub async fn new() -> (
         Arc<Self>,
         mpsc::Sender<ServerCommand>,
         mpsc::Receiver<ServerEvent>,
@@ -139,110 +178,171 @@ impl McServerManager {
         });
 
         let self_clone = server.clone();
-        self_clone.spawn_listener(event_sender, cmd_receiver);
+        self_clone.spawn_listener(event_sender, cmd_receiver).await;
 
         (server, cmd_sender, event_receiver)
     }
 
-    fn spawn_listener(
+    async fn spawn_listener(
         self: Arc<Self>,
         mut event_sender: mpsc::Sender<ServerEvent>,
         mut cmd_receiver: mpsc::Receiver<ServerCommand>,
     ) {
-        tokio::spawn(async move {
-            let mut current_config: Option<McServerConfig> = None;
+        let handle = tokio::runtime::Handle::current();
 
-            while let Some(cmd) = cmd_receiver.next().await {
-                use ServerCommand::*;
-                use ServerEvent::*;
+        // We have to spawn a new thread here because `MBeanClient` is !Send :(
+        std::thread::spawn(move || {
+            handle.block_on(async move {
+                let mut current_config: Option<McServerConfig> = None;
+                let mut jmx_client: Option<MBeanClient> = None;
 
-                match cmd {
-                    TellRawAll(json) => {
-                        let _ = self.write_to_stdin(format!("tellraw @a {}\n", json)).await;
-                    }
-                    WriteCommandToStdin(text) => {
-                        let _ = self.write_to_stdin(text + "\n").await;
-                    }
-                    WriteToStdin(text) => {
-                        let _ = self.write_to_stdin(text).await;
-                    }
+                while let Some(cmd) = cmd_receiver.next().await {
+                    use ServerCommand::*;
+                    use ServerEvent::*;
 
-                    AgreeToEula => {
-                        let mut event_sender_clone = event_sender.clone();
+                    match cmd {
+                        TellRawAll(json) => {
+                            let _ = self.write_to_stdin(format!("tellraw @a {}\n", json)).await;
+                        }
+                        WriteCommandToStdin(text) => {
+                            let _ = self.write_to_stdin(text + "\n").await;
+                        }
+                        WriteToStdin(text) => {
+                            let _ = self.write_to_stdin(text).await;
+                        }
 
-                        if let Some(config) = &current_config {
-                            let server_path = config.server_path.clone();
-                            tokio::spawn(async move {
-                                event_sender_clone
-                                    .send(AgreeToEulaResult(
-                                        McServerManager::agree_to_eula(server_path).await,
+                        GetAverageTickTime => {
+                            if let Some(jmx_client) = &jmx_client {
+                                event_sender
+                                    .send(ServerEvent::GetAverageTickTimeResult(
+                                        jmx_client
+                                            .get_attribute(
+                                                "net.minecraft.server:type=Server",
+                                                "averageTickTime",
+                                            )
+                                            .map_err(|e| e.to_string()),
                                     ))
+                                    .await
+                                    .unwrap();
+                            }
+                        }
+                        GetTickTimes => {
+                            if let Some(jmx_client) = &jmx_client {
+                                event_sender
+                                    .send(ServerEvent::GetTickTimesResult(
+                                        jmx_client
+                                            .get_attribute(
+                                                "net.minecraft.server:type=Server",
+                                                "tickTimes",
+                                            )
+                                            .map_err(|e| e.to_string()),
+                                    ))
+                                    .await
+                                    .unwrap();
+                            }
+                        }
+
+                        AgreeToEula => {
+                            let mut event_sender_clone = event_sender.clone();
+
+                            if let Some(config) = &current_config {
+                                let server_path = config.server_path.clone();
+                                tokio::spawn(async move {
+                                    event_sender_clone
+                                        .send(AgreeToEulaResult(
+                                            McServerManager::agree_to_eula(server_path).await,
+                                        ))
+                                        .await
+                                        .unwrap();
+                                });
+                            }
+                        }
+                        StartServer { config } => {
+                            if self.running().await {
+                                continue;
+                            }
+
+                            let config = if let Some(config) = config {
+                                current_config = Some(config);
+                                current_config.as_ref().unwrap()
+                            } else if let Some(current_config) = &current_config {
+                                current_config
+                            } else {
+                                event_sender
+                                    .send(ServerEvent::StartServerResult(Err(
+                                        McServerStartError::NoPreviousConfig,
+                                    )))
+                                    .await
+                                    .unwrap();
+                                continue;
+                            };
+
+                            let (child, rx) = match McServerInternal::setup_server(config) {
+                                Ok((internal, child, rx)) => {
+                                    *self.internal.lock().await = Some(internal);
+                                    (child, rx)
+                                }
+                                Err(e) => {
+                                    event_sender
+                                        .send(ServerEvent::StartServerResult(Err(e)))
+                                        .await
+                                        .unwrap();
+                                    continue;
+                                }
+                            };
+
+                            let event_sender_clone = event_sender.clone();
+                            let internal_clone = self.internal.clone();
+
+                            // TODO: it is unclear if the JMX server will always be available immediately
+                            // after spawning the MC server process
+                            if config.enable_jmx {
+                                let jmx_port = config.jmx_port.unwrap_or(1099);
+                                jmx_client =
+                                    match MBeanClient::connect(MBeanAddress::service_url(format!(
+                                    "service:jmx:rmi://localhost:{}/jndi/rmi://localhost:{}/jmxrmi",
+                                    jmx_port, jmx_port
+                                ))) {
+                                        Ok(client) => Some(client),
+                                        Err(e) => {
+                                            event_sender
+                                                .send(ServerEvent::StartServerResult(Err(
+                                                    McServerStartError::JmxError(e.to_string()),
+                                                )))
+                                                .await
+                                                .unwrap();
+                                            None
+                                        }
+                                    }
+                            }
+
+                            // Spawn a task to drive the server process to completion
+                            // and send an event when it exits
+                            tokio::spawn(async move {
+                                let mut event_sender = event_sender_clone;
+                                let ret =
+                                    McServerInternal::run_server(child, rx, event_sender.clone())
+                                        .await;
+                                let _ = internal_clone.lock().await.take();
+
+                                event_sender
+                                    .send(ServerStopped(ret.0, ret.1))
                                     .await
                                     .unwrap();
                             });
                         }
-                    }
-                    StartServer { config } => {
-                        if self.running().await {
-                            continue;
-                        }
+                        StopServer { forever } => {
+                            // TODO: handle error
+                            let _ = self.write_to_stdin("stop\n").await;
+                            let _ = jmx_client.take();
 
-                        let config = if let Some(config) = config {
-                            current_config = Some(config);
-                            current_config.as_ref().unwrap()
-                        } else if let Some(current_config) = &current_config {
-                            current_config
-                        } else {
-                            event_sender
-                                .send(ServerEvent::StartServerResult(Err(
-                                    McServerStartError::NoPreviousConfig,
-                                )))
-                                .await
-                                .unwrap();
-                            continue;
-                        };
-
-                        let (child, rx) = match McServerInternal::setup_server(config) {
-                            Ok((internal, child, rx)) => {
-                                *self.internal.lock().await = Some(internal);
-                                (child, rx)
+                            if forever {
+                                break;
                             }
-                            Err(e) => {
-                                event_sender
-                                    .send(ServerEvent::StartServerResult(Err(e)))
-                                    .await
-                                    .unwrap();
-                                continue;
-                            }
-                        };
-
-                        let event_sender_clone = event_sender.clone();
-                        let internal_clone = self.internal.clone();
-
-                        // Spawn a task to drive the server process to completion
-                        // and send an event when it exits
-                        tokio::spawn(async move {
-                            let mut event_sender = event_sender_clone;
-                            let ret =
-                                McServerInternal::run_server(child, rx, event_sender.clone()).await;
-                            let _ = internal_clone.lock().await.take();
-
-                            event_sender
-                                .send(ServerStopped(ret.0, ret.1))
-                                .await
-                                .unwrap();
-                        });
-                    }
-                    StopServer { forever } => {
-                        // TODO: handle error
-                        let _ = self.write_to_stdin("stop\n").await;
-
-                        if forever {
-                            break;
                         }
                     }
                 }
-            }
+            });
         });
     }
 

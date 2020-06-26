@@ -33,6 +33,10 @@ pub enum ServerEvent {
     AgreeToEulaResult(io::Result<()>),
     /// Response to `StartServer`
     StartServerResult(Result<(), McServerStartError>),
+    /// Response to `GetAverageTickTime`
+    GetAverageTickTimeResult(Result<f64, String>),
+    /// Response to `GetTickTimes`
+    GetTickTimesResult(Result<Vec<i64>, String>),
 }
 
 /// Commands that can be sent over channels to be performed by the MC server.
@@ -52,6 +56,15 @@ pub enum ServerCommand {
     WriteCommandToStdin(String),
     /// Write the given string verbatim to stdin
     WriteToStdin(String),
+
+    /// Request the current average tick time from the Minecraft server
+    ///
+    /// This command only works if JMX is enabled
+    GetAverageTickTime,
+    /// Request the tick times from the Minecraft server
+    ///
+    /// This command only works if JMX is enabled
+    GetTickTimes,
 
     /// Agree to the EULA (required to run the server)
     AgreeToEula,
