@@ -24,7 +24,7 @@ crossterm = { version = "0.17", features = ["event-stream"] }
 tui = { version = "0.9", default-features = false, features = ['crossterm'] }
 unicode-width = "0.1"
 ringbuffer = "0.2.2"
-textwrap = "0.11"
+textwrap = "0.12"
 
 [dev-dependencies]
 rusty-hook = "^0.11.1"

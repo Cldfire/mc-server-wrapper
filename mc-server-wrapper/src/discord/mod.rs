@@ -21,7 +21,7 @@ use twilight::{
 use mc_server_wrapper_lib::{communication::*, parse::*};
 use minecraft_protocol::chat::{Color, Payload};
 
-use util::{channel_name, format_mentions_in, format_online_players, tellraw_prefix};
+use util::{format_mentions_in, format_online_players, tellraw_prefix};
 
 use crate::ONLINE_PLAYERS;
 use futures::future;
@@ -259,7 +259,7 @@ impl DiscordBridge {
                 if let Some(channel_name) = guild
                     .channels
                     .get(&self.bridge_channel_id)
-                    .map(|c| channel_name(c))
+                    .map(|c| c.name())
                 {
                     info!(
                         "Connected to guild {}, bridging chat to '#{}'",

@@ -3,19 +3,8 @@ use minecraft_protocol::chat::{Color, MessageBuilder, Payload};
 use std::collections::{HashMap, HashSet};
 use twilight::{
     cache::InMemoryCache,
-    model::{
-        channel::GuildChannel,
-        id::{ChannelId, RoleId, UserId},
-    },
+    model::id::{ChannelId, RoleId, UserId},
 };
-
-pub fn channel_name(channel: &GuildChannel) -> &str {
-    match channel {
-        GuildChannel::Category(cchan) => &cchan.name,
-        GuildChannel::Text(tchan) => &tchan.name,
-        GuildChannel::Voice(vchan) => &vchan.name,
-    }
-}
 
 /// Returns a `MessageBuilder` with a nice prefix for Discord messages in
 /// Minecraft
@@ -133,7 +122,7 @@ pub async fn format_mentions_in<S: Into<String>>(
                 }
                 MentionType::Channel => {
                     if let Some(channel) = cache.guild_channel(ChannelId(id)).await.unwrap() {
-                        replace_mention(&format!("#{}", channel_name(&channel)));
+                        replace_mention(&format!("#{}", channel.name()));
                     }
                 }
                 MentionType::Role => {
