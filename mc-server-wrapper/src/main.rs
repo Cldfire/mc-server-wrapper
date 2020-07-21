@@ -27,17 +27,12 @@ use crate::discord::{
 use crate::ui::TuiState;
 
 use crossterm::{
-    cursor::MoveTo,
     event::{Event, EventStream, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use structopt::{clap::AppSettings, StructOpt};
-use tui::{
-    backend::{Backend, CrosstermBackend},
-    Terminal,
-};
-use unicode_width::UnicodeWidthStr;
+use tui::{backend::CrosstermBackend, Terminal};
 
 mod discord;
 mod logging;
@@ -172,16 +167,6 @@ async fn main() -> anyhow::Result<()> {
 
         // TODO: figure out what to do if the terminal fails to draw
         let _ = terminal.draw(|mut f| tui_state.draw(&mut f));
-        let size = terminal.backend().size().unwrap();
-        // Move the cursor back into the input box
-        // This is ugly but it's the only way to do it as of right now
-        terminal
-            .backend_mut()
-            .execute(MoveTo(
-                2 + tui_state.input_state.value().width() as u16,
-                size.height - 2,
-            ))
-            .unwrap();
 
         tokio::select! {
             e = mc_event_receiver.next() => if let Some(e) = e {

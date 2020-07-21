@@ -5,9 +5,11 @@ use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    widgets::{Block, Borders, List, Paragraph, Tabs, Text},
+    text::{Span, Spans},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs},
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 /// Represents the current state of the terminal UI
 #[derive(Debug)]
@@ -29,7 +31,7 @@ impl TuiState {
     }
 
     /// Draw the current state to the given frame
-    pub fn draw<B: Backend>(&self, f: &mut Frame<B>) {
+    pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
@@ -73,12 +75,16 @@ pub struct TabsState {
 impl TabsState {
     /// Draw the current state in the given `area`
     fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect) {
-        let tabs = Tabs::default()
-            .block(Block::default().borders(Borders::BOTTOM))
-            .titles(&self.titles)
-            .style(Style::default().fg(Color::Green))
-            .highlight_style(Style::default().fg(Color::Yellow))
-            .select(self.current_idx);
+        let tabs = Tabs::new(
+            self.titles
+                .iter()
+                .map(|s| s.as_ref())
+                .map(Spans::from)
+                .collect(),
+        )
+        .block(Block::default().borders(Borders::BOTTOM))
+        .highlight_style(Style::default().fg(Color::Yellow))
+        .select(self.current_idx);
 
         f.render_widget(tabs, area);
     }
@@ -108,28 +114,51 @@ impl TabsState {
 #[derive(Debug)]
 pub struct LogsState {
     /// Stores the log messages to be displayed
-    records: RingBuffer<Text<'static>>,
+    ///
+    /// (original_message, (wrapped_message, wrapped_at_width))
+    records: RingBuffer<(String, Option<(Vec<ListItem<'static>>, u16)>)>,
 }
 
 impl LogsState {
     /// Draw the current state in the given `area`
-    fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect) {
+    fn draw<B: Backend>(&mut self, f: &mut Frame<B>, area: Rect) {
         let area_height = area.height as usize;
-        let wrapper = Wrapper::new(area.width as usize);
+        let area_width = area.width as usize;
 
-        // TODO: this does a lot more wrapping than it needs to depending on
-        // the situation
-        let wrapped_lines: Vec<Text> = self
+        let wrapper = Wrapper::new(area_width);
+        let num_records = self.records.len();
+        // Keep track of the number of lines after wrapping so we can skip lines as
+        // needed below
+        let mut wrapped_lines_len = 0;
+
+        let wrapped_lines: Vec<ListItem> = self
             .records
-            .iter()
-            // Only process the records we could potentially be displaying
-            .skip(self.records.len().saturating_sub(area_height))
+            .iter_mut()
+            // Only wrap the records we could potentially be displaying
+            .skip(num_records.saturating_sub(area_height))
             .map(|r| {
-                if let Text::Raw(text) = r {
-                    wrapper.wrap(text.as_ref()).into_iter().map(Text::raw)
-                } else {
-                    unreachable!()
+                // See if we can use a cached wrapped line
+                if let Some(wrapped) = &r.1 {
+                    if wrapped.1 as usize == area_width {
+                        wrapped_lines_len += wrapped.0.len();
+                        return wrapped.0.clone();
+                    }
                 }
+
+                // If not, wrap the line and cache it
+                *(&mut r.1) = Some((
+                    wrapper
+                        .wrap(r.0.as_ref())
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .map(Span::from)
+                        .map(ListItem::new)
+                        .collect::<Vec<ListItem>>(),
+                    area.width,
+                ));
+
+                wrapped_lines_len += r.1.as_ref().unwrap().0.len();
+                r.1.as_ref().unwrap().0.clone()
             })
             .flatten()
             .collect();
@@ -140,17 +169,19 @@ impl LogsState {
         // see https://github.com/fdehau/tui-rs/issues/89
         let logs = List::new(
             wrapped_lines
-                .iter()
-                .skip(wrapped_lines.len().saturating_sub(area_height))
-                .cloned(),
+                .into_iter()
+                // Wrapping could have created more lines than what we can display;
+                // skip them
+                .skip(wrapped_lines_len.saturating_sub(area_height))
+                .collect::<Vec<_>>(),
         )
         .block(Block::default().borders(Borders::NONE));
         f.render_widget(logs, area);
     }
 
     /// Add a record to be displayed
-    pub fn add_record(&mut self, record: Text<'static>) {
-        self.records.push(record);
+    pub fn add_record(&mut self, record: String) {
+        self.records.push((record, None));
     }
 }
 
@@ -163,12 +194,15 @@ pub struct InputState {
 impl InputState {
     /// Draw the current state in the given `area`
     fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect) {
-        let text = [Text::raw("> "), Text::raw(&self.value)];
-        let input = Paragraph::new(text.iter())
+        let text = Spans::from(vec![Span::raw("> "), Span::raw(&self.value)]);
+        let value_width = self.value.width() as u16;
+
+        let input = Paragraph::new(text)
             .style(Style::default().fg(Color::Yellow))
             .block(Block::default().borders(Borders::NONE));
 
         f.render_widget(input, area);
+        f.set_cursor(value_width + 2, area.y);
     }
 
     /// Clear the input

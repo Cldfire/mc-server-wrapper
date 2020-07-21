@@ -1,11 +1,10 @@
 use mc_server_wrapper_lib::CONSOLE_MSG_LOG_TARGET;
 use std::path::Path;
 use tokio::sync::mpsc::Sender;
-use tui::widgets::Text;
 
 pub fn setup_logger<P: AsRef<Path>>(
     logfile_path: P,
-    log_sender: Sender<Text<'static>>,
+    log_sender: Sender<String>,
     log_level_all: log::Level,
     log_level_self: log::Level,
     log_level_discord: log::Level,
@@ -56,15 +55,13 @@ pub fn setup_logger<P: AsRef<Path>>(
             log::LevelFilter::Info,
         )
         .chain(fern::Output::call(move |record| {
-            // TODO: shouldn't send as Text
-            let text = Text::raw(format!(
+            let record = format!(
                 "[{}] [{}, {}]: {}",
                 chrono::Local::now().format("%-I:%M:%S %p"),
                 record.target(),
                 record.level(),
                 record.args()
-            ))
-            .to_owned();
+            );
 
             let mut log_sender_clone = log_sender.clone();
             // TODO: right now log messages can print out-of-order because we
@@ -75,7 +72,7 @@ pub fn setup_logger<P: AsRef<Path>>(
             //
             // Need to investigate
             tokio::spawn(async move {
-                let _ = log_sender_clone.send(text).await;
+                let _ = log_sender_clone.send(record).await;
             });
         }));
 
