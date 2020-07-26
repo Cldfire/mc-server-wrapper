@@ -176,6 +176,8 @@ async fn main() -> anyhow::Result<()> {
                             warn!("Encountered unknown message type from Minecraft: {}", s);
                         }
 
+                        let mut should_log = true;
+
                         // TODO: re-add progress bar support for world loading at some point?
                         // TODO: parse when server is done booting so we can set Discord
                         // channel topic
@@ -211,10 +213,19 @@ async fn main() -> anyhow::Result<()> {
                                     msg
                                 ));
                             },
+                            ConsoleMsgSpecific::SpawnPrepareProgress { progress } => {
+                                tui_state.logs_state.set_progress_percent(progress as u32);
+                                should_log = false;
+                            },
+                            ConsoleMsgSpecific::SpawnPrepareFinish { .. } => {
+                                tui_state.logs_state.set_progress_percent(100);
+                            },
                             _ => {}
                         }
 
-                        console_msg.log();
+                        if should_log {
+                            console_msg.log();
+                        }
                     },
                     ServerEvent::ConsoleEvent(console_msg, None) => {
                         console_msg.log();
