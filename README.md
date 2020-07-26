@@ -19,7 +19,31 @@ Not production-ready, but getting there. Feel free to use it for non-critical se
 * Auto-agree to EULA
 * Improved console output formatting
 
-## Discord bridge setup
+## Installation
+
+### Downloading
+
+You can download prebuilt binaries in the [releases section](https://github.com/Cldfire/mc-server-wrapper/releases).
+
+### Building
+
+You can also build and install from source (requires an up-to-date [Rust](https://www.rust-lang.org) install):
+
+```
+cargo install --git https://github.com/Cldfire/mc-server-wrapper.git
+```
+
+## Usage
+
+Point the wrapper at a Minecraft server jar:
+
+```
+mc-server-wrapper path/to/server.jar
+```
+
+Run `mc-server-wrapper --help` for more options.
+
+### Discord bridge setup
 
 * Register an application and a bot with [Discord](https://discordapp.com/developers/applications)
 * Toggle `Server Members Intent` to on under `Privileged Gateway Intents`
@@ -34,6 +58,12 @@ DISCORD_CHANNEL_ID="..."
 ```
 
 These environment variables can also be provided in a `.env` file of the above format. See [dotenv](https://github.com/dotenv-rs/dotenv) for more.
+
+Make sure you start the wrapper with the `-b` flag:
+
+```
+mc-server-wrapper -b path/to/server.jar
+```
 
 ## Future plans
 
