@@ -19,10 +19,7 @@ use mc_server_wrapper_lib::{
 use dotenv::dotenv;
 use log::*;
 
-use crate::discord::{
-    util::{format_online_players, sanitize_for_markdown},
-    *,
-};
+use crate::discord::{util::sanitize_for_markdown, *};
 
 use crate::ui::TuiState;
 
@@ -190,9 +187,6 @@ async fn main() -> anyhow::Result<()> {
 
                                 let mut online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
                                 online_players.remove(&name);
-                                discord.clone().set_channel_topic(
-                                    format_online_players(&online_players, true)
-                                );
                             },
                             ConsoleMsgSpecific::PlayerLogin { name, .. } => {
                                 discord.clone().send_channel_msg(format!(
@@ -202,9 +196,6 @@ async fn main() -> anyhow::Result<()> {
 
                                 let mut online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
                                 online_players.insert(name);
-                                discord.clone().set_channel_topic(
-                                    format_online_players(&online_players, true)
-                                );
                             },
                             ConsoleMsgSpecific::PlayerMsg { name, msg } => {
                                 discord.clone().send_channel_msg(format!(
@@ -238,8 +229,6 @@ async fn main() -> anyhow::Result<()> {
                     },
 
                     ServerEvent::ServerStopped(process_result, reason) => {
-                        discord.clone().set_channel_topic("Minecraft server is offline");
-
                         if let Some(ShutdownReason::EulaNotAccepted) = reason {
                             info!("Agreeing to EULA!");
                             mc_cmd_sender.send(ServerCommand::AgreeToEula).await.unwrap();

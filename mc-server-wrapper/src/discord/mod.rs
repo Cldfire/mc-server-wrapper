@@ -532,38 +532,4 @@ impl DiscordBridge {
             }
         })
     }
-
-    /// Sets the topic of the channel being bridged to to `text`
-    ///
-    /// A new task is spawned to send the message, and its `JoinHandle` is
-    /// returned so its completion can be `await`ed if desired.
-    // TODO: need to set channel topic way less frequently
-    pub fn set_channel_topic<T: Into<String> + Send + 'static>(
-        self,
-        text: T,
-    ) -> tokio::task::JoinHandle<()> {
-        tokio::spawn(async move {
-            if let Some(inner) = self.inner {
-                let content_res = inner
-                    .client
-                    .update_channel(self.bridge_channel_id)
-                    .topic(text);
-
-                match content_res {
-                    Ok(cm) => {
-                        if let Err(e) = cm.await {
-                            warn!("Failed to set Discord channel topic: {}", e);
-                        }
-                    }
-                    Err(validation_err) => {
-                        warn!(
-                            "Attempted to set Discord channel topic to invalid content: {}",
-                            validation_err
-                        );
-                        // TODO: should also log here as described above
-                    }
-                }
-            }
-        })
-    }
 }
