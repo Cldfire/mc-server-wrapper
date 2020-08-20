@@ -10,7 +10,7 @@ use twilight::{
     },
     command_parser::{Command, CommandParserConfig, Parser},
     gateway::{Cluster, ClusterConfig, Event},
-    http::Client as DiscordClient,
+    http::{request::prelude::create_message::CreateMessageError, Client as DiscordClient},
     model::{
         channel::{message::MessageType, Message},
         gateway::{payload::RequestGuildMembers, GatewayIntents},
@@ -525,14 +525,16 @@ impl DiscordBridge {
                             warn!("Failed to send Discord message: {}", e);
                         }
                     }
-                    Err(validation_err) => {
-                        warn!(
+                    Err(validation_err) => match validation_err {
+                        CreateMessageError::ContentInvalid { content } => warn!(
+                            "Attempted to send invalid message to Discord, content was: {}",
+                            content
+                        ),
+                        _ => warn!(
                             "Attempted to send invalid message to Discord: {}",
                             validation_err
-                        );
-                        // TODO: log message content that failed to validate
-                        // when twilight returns ownership of it
-                    }
+                        ),
+                    },
                 }
             }
         })
