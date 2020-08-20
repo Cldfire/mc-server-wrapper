@@ -267,6 +267,7 @@ mod test {
                 managed: false,
                 mentionable: true,
                 name: "test-role".into(),
+                permissions_old: Permissions::empty(),
                 permissions: Permissions::empty(),
                 position: 0,
             }

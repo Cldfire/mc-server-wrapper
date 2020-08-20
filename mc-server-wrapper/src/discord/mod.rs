@@ -49,7 +49,7 @@ pub async fn setup_discord(
         // For all received Discord events, map the event to a `ServerCommand`
         // (if necessary) and send it to the Minecraft server
         // TODO: don't unwrap here
-        let mut events = discord.cluster().unwrap().events().await;
+        let mut events = discord.cluster_ref().unwrap().events();
         while let Some(e) = events.next().await {
             let discord = discord.clone();
             let cmd_sender_clone = mc_cmd_sender.clone();
@@ -153,6 +153,11 @@ impl DiscordBridge {
         self.inner.as_ref().map(|i| i.cluster.clone())
     }
 
+    /// Provides a reference to the `Cluster` inside this struct
+    pub fn cluster_ref(&self) -> Option<&Cluster> {
+        self.inner.as_ref().map(|i| &i.cluster)
+    }
+
     /// Provides access to the `Client` inside this struct
     pub fn client(&self) -> Option<DiscordClient> {
         self.inner.as_ref().map(|i| i.client.clone())
@@ -167,7 +172,7 @@ impl DiscordBridge {
     pub fn command_parser<'a>() -> Parser<'a> {
         let mut config = CommandParserConfig::new();
 
-        config.command("list").add();
+        config.add_command("list", false);
 
         // TODO: make this configurable
         config.add_prefix("!mc ");
@@ -262,7 +267,7 @@ impl DiscordBridge {
                     .map(|c| c.name())
                 {
                     info!(
-                        "Connected to guild {}, bridging chat to '#{}'",
+                        "Connected to guild '{}', bridging chat to '#{}'",
                         guild.name, channel_name
                     );
 
@@ -277,7 +282,7 @@ impl DiscordBridge {
                         .command(shard_id, &RequestGuildMembers::new_all(guild.id, None))
                         .await?;
                 } else {
-                    info!("Connected to guild {}", guild.name);
+                    info!("Connected to guild '{}'", guild.name);
                 }
             }
             (_, Event::MessageCreate(msg)) => {

@@ -175,7 +175,6 @@ async fn main() -> anyhow::Result<()> {
 
                         let mut should_log = true;
 
-                        // TODO: re-add progress bar support for world loading at some point?
                         // TODO: parse when server is done booting so we can set Discord
                         // channel topic
                         match specific_msg {
