@@ -9,7 +9,7 @@ use twilight::{
         InMemoryCache,
     },
     command_parser::{Command, CommandParserConfig, Parser},
-    gateway::{Cluster, ClusterConfig, Event},
+    gateway::{Cluster, Event},
     http::{request::prelude::create_message::CreateMessageError, Client as DiscordClient},
     model::{
         channel::{message::MessageType, Message},
@@ -100,14 +100,14 @@ impl DiscordBridge {
     /// Connects to Discord with the given `token` and `bridge_channel_id`
     pub async fn new(token: String, bridge_channel_id: ChannelId) -> anyhow::Result<Self> {
         let client = DiscordClient::new(&token);
-        let cluster_config = ClusterConfig::builder(&token)
+        let cluster = Cluster::builder(&token)
             .intents(Some(
                 GatewayIntents::GUILDS
                     | GatewayIntents::GUILD_MESSAGES
                     | GatewayIntents::GUILD_MEMBERS,
             ))
-            .build();
-        let cluster = Cluster::new(cluster_config).await?;
+            .build()
+            .await?;
 
         let cluster_spawn = cluster.clone();
         tokio::spawn(async move {
