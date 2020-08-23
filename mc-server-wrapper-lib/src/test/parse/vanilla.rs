@@ -175,3 +175,17 @@ fn player_left_game() {
         _ => unreachable!(),
     }
 }
+
+#[test]
+fn server_finished_loading() {
+    let msg = "[21:57:50] [Server thread/INFO]: Done (7.410s)! For help, type \"help\"";
+    let specific_msg =
+        ConsoleMsgSpecific::try_parse_from(&ConsoleMsg::try_parse_from(msg).unwrap()).unwrap();
+
+    match specific_msg {
+        ConsoleMsgSpecific::FinishedLoading { time_elapsed_s } => {
+            assert_eq!(time_elapsed_s, 7.410);
+        }
+        _ => unreachable!(),
+    }
+}

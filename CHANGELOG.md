@@ -6,6 +6,7 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ### Added
 
+* The bot's status message is now updated with server information (such as the names of online players)
 * Content that failed to validate will now be logged alongside the warning that a message failed to send to Discord
 
 ## [alpha1] - 2020-07-26

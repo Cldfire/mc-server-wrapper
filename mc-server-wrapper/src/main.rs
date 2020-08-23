@@ -30,6 +30,7 @@ use crossterm::{
 };
 use structopt::{clap::AppSettings, StructOpt};
 use tui::{backend::CrosstermBackend, Terminal};
+use util::{format_online_players, OnlinePlayerFormat};
 
 mod discord;
 mod logging;
@@ -146,6 +147,13 @@ async fn main() -> anyhow::Result<()> {
             opt.discord_token.unwrap(),
             ChannelId(opt.discord_channel_id.unwrap()),
             mc_cmd_sender.clone(),
+            // Allows for disabling status updates while developing to avoid messing
+            // with a prod bot account
+            // TODO: move to config
+            match std::env::var("NO_UPDATE_STATUS") {
+                Ok(s) if s == "1" => false,
+                _ => true,
+            },
         )
         .await
         .with_context(|| "Failed to connect to Discord")?
@@ -175,8 +183,6 @@ async fn main() -> anyhow::Result<()> {
 
                         let mut should_log = true;
 
-                        // TODO: parse when server is done booting so we can set Discord
-                        // channel topic
                         match specific_msg {
                             ConsoleMsgSpecific::PlayerLogout { name } => {
                                 discord.clone().send_channel_msg(format!(
@@ -186,6 +192,10 @@ async fn main() -> anyhow::Result<()> {
 
                                 let mut online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
                                 online_players.remove(&name);
+                                discord.clone().update_status(format_online_players(
+                                    &online_players,
+                                    OnlinePlayerFormat::BotStatus
+                                ));
                             },
                             ConsoleMsgSpecific::PlayerLogin { name, .. } => {
                                 discord.clone().send_channel_msg(format!(
@@ -195,6 +205,10 @@ async fn main() -> anyhow::Result<()> {
 
                                 let mut online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
                                 online_players.insert(name);
+                                discord.clone().update_status(format_online_players(
+                                    &online_players,
+                                    OnlinePlayerFormat::BotStatus
+                                ));
                             },
                             ConsoleMsgSpecific::PlayerMsg { name, msg } => {
                                 discord.clone().send_channel_msg(format!(
@@ -209,6 +223,13 @@ async fn main() -> anyhow::Result<()> {
                             },
                             ConsoleMsgSpecific::SpawnPrepareFinish { .. } => {
                                 tui_state.logs_state.set_progress_percent(100);
+                            },
+                            ConsoleMsgSpecific::FinishedLoading { .. } => {
+                                let online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
+                                discord.clone().update_status(format_online_players(
+                                    &online_players,
+                                    OnlinePlayerFormat::BotStatus
+                                ));
                             },
                             _ => {}
                         }
@@ -273,9 +294,11 @@ async fn main() -> anyhow::Result<()> {
                             }
 
                             if sent_restart_command {
-                                info!("Restarting server...");
                                 discord.clone().send_channel_msg("Restarting the Minecraft server...");
+                                discord.clone().update_status("server is restarting");
+                                info!("Restarting server...");
                             } else {
+                                discord.clone().update_status("server is offline");
                                 info!("Start the Minecraft server back up with `start` or shutdown the wrapper with `stop`");
                             }
                         }

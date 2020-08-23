@@ -38,6 +38,11 @@ pub enum ConsoleMsgSpecific {
     SpawnPrepareFinish {
         time_elapsed_ms: u64,
     },
+    /// The server is finished loading and is ready for people to connect
+    FinishedLoading {
+        /// The amount of time the server took to load
+        time_elapsed_s: f32,
+    },
 }
 
 impl ConsoleMsgSpecific {
@@ -154,6 +159,15 @@ impl ConsoleMsgSpecific {
                 .into();
 
             ConsoleMsgSpecific::PlayerLogout { name }
+        } else if console_msg.msg.starts_with("Done (") {
+            let time = &console_msg
+                .msg
+                .split_at(console_msg.msg.find('(').unwrap())
+                .1[1..];
+
+            let time_elapsed_s = time.split_at(time.find('s').unwrap()).0.parse().unwrap();
+
+            ConsoleMsgSpecific::FinishedLoading { time_elapsed_s }
         } else {
             // It wasn't anything specific we're looking for
             return None;

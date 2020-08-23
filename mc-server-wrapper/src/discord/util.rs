@@ -3,7 +3,10 @@ use minecraft_protocol::chat::{Color, MessageBuilder, Payload};
 use std::collections::{HashMap, HashSet};
 use twilight::{
     cache::InMemoryCache,
-    model::id::{ChannelId, RoleId, UserId},
+    model::{
+        gateway::presence::{Activity, ActivityType},
+        id::{ChannelId, RoleId, UserId},
+    },
 };
 
 /// Returns a `MessageBuilder` with a nice prefix for Discord messages in
@@ -15,6 +18,27 @@ pub fn tellraw_prefix() -> MessageBuilder {
         .then(Payload::text(CHAT_PREFIX))
         .bold(true)
         .color(Color::LightPurple)
+}
+
+/// Helper to make a status for the bot
+pub fn activity(name: String) -> Activity {
+    Activity {
+        application_id: None,
+        assets: None,
+        created_at: None,
+        details: None,
+        flags: None,
+        id: None,
+        instance: None,
+        kind: ActivityType::Playing,
+        name,
+        emoji: None,
+        party: None,
+        secrets: None,
+        state: None,
+        timestamps: None,
+        url: None,
+    }
 }
 
 /// Formats mentions in the given content using the given info
@@ -158,49 +182,132 @@ pub async fn format_mentions_in<S: Into<String>>(
     content
 }
 
+/// Different formats online player data can be turned into
+#[derive(Debug)]
+pub enum OnlinePlayerFormat {
+    /// Format intended to be used as the response to a command
+    CommandResponse {
+        /// Setting this to `true` will truncate the list to 3 players
+        short: bool,
+    },
+    /// Format intended to be used for a bot's status
+    BotStatus,
+}
+
 /// Utility function to return a neatly formatted string describing who's
 /// playing Minecraft
 ///
 /// `short` can be set to true to truncate the list.
-pub fn format_online_players(online_players: &HashSet<String>, short: bool) -> String {
+pub fn format_online_players(
+    online_players: &HashSet<String>,
+    format: OnlinePlayerFormat,
+) -> String {
     // Sort the players for stable name order and sanitize their names
     let mut online_players_vec: Vec<_> = online_players.iter().map(sanitize_for_markdown).collect();
     online_players_vec.sort();
 
-    match online_players.len() {
-        0 => "Nobody is playing Minecraft".into(),
-        1 => format!("{} is playing Minecraft", online_players_vec[0]),
-        2 => format!(
-            "{} and {} are playing Minecraft",
-            online_players_vec[0], online_players_vec[1]
-        ),
-        n => {
-            if short {
-                let mut string = format!(
-                    "{}, {}, and {}",
-                    online_players_vec[0], online_players_vec[1], online_players_vec[2]
-                );
+    match format {
+        OnlinePlayerFormat::CommandResponse { short } => match online_players.len() {
+            0 => "Nobody is playing Minecraft".into(),
+            1 => format!("{} is playing Minecraft", online_players_vec[0]),
+            2 => format!(
+                "{} and {} are playing Minecraft",
+                online_players_vec[0], online_players_vec[1]
+            ),
+            _ => format!(
+                "{} are playing Minecraft",
+                online_players_list(&online_players_vec, short)
+            ),
+        },
+        OnlinePlayerFormat::BotStatus => match online_players.len() {
+            0 => "Minecraft with nobody".into(),
+            1 => format!("Minecraft with {}", online_players_vec[0]),
+            2 => format!(
+                "Minecraft with {} and {}",
+                online_players_vec[0], online_players_vec[1]
+            ),
+            _ => {
+                // The character limit for the bot's status message appears to be 128
+                // characters. Our approach here is to display as many full online
+                // player names as possible and then resort to a (+ __ more) at the end
+                // for any names that won't fit in the character limit
+                let mut string = String::with_capacity(128);
+                string.push_str("Minecraft with ");
 
-                if n > 3 {
-                    string.push_str(&format!(" (+ {} more)", n - 3));
+                let mut i = 0;
+                for name in &online_players_vec {
+                    // We're nearing the max character limit. We need room for:
+                    //
+                    // and ________________ (+ ___ more)
+                    //
+                    // which is for:
+                    //
+                    // * the last player name (max length: 16 chars)
+                    // * the "+ x more" text (max length: 3 chars, because it's not
+                    //     physically possible to have >999 players on a single MC
+                    //     server instance)
+                    //
+                    // This totals 33 chars of space we need to reserve. There is
+                    // a *ton* of room to be smarter here, but like... effort.
+                    if string.len() + name.len() + 2 > 95 {
+                        if i == online_players_vec.len() - 1 {
+                            // If we only have one name left then we'll just add it
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if i == online_players_vec.len() - 1 {
+                        string.push_str("and ");
+                        string.push_str(name);
+                    } else {
+                        string.push_str(name);
+                        string.push_str(", ");
+                    }
+
+                    // Keep track of how many full names we have included in the string
+                    i += 1;
                 }
 
-                string.push_str(" are playing Minecraft");
-                string
-            } else {
-                let mut string = String::new();
+                if i < online_players_vec.len() {
+                    // We need the (+ ___ more) piece
+                    //
+                    // Note that we have at least two names left when we've gotten here
+                    string.push_str("and ");
+                    string.push_str(&online_players_vec[i]);
+                    i += 1;
 
-                for player in online_players_vec[..online_players_vec.len() - 1].iter() {
-                    string.push_str(&format!("{}, ", player));
+                    string.push_str(&format!(" (+ {} more)", online_players_vec.len() - i));
                 }
 
-                string.push_str(&format!(
-                    "and {} are playing Minecraft",
-                    online_players_vec.last().unwrap()
-                ));
                 string
             }
+        },
+    }
+}
+
+/// Formats a sorted array of online player names into a neat list
+fn online_players_list(online_players: &[String], short: bool) -> String {
+    if short {
+        let mut string = format!(
+            "{}, {}, and {}",
+            online_players[0], online_players[1], online_players[2]
+        );
+
+        if online_players.len() > 3 {
+            string.push_str(&format!(" (+ {} more)", online_players.len() - 3));
         }
+
+        string
+    } else {
+        let mut string = String::new();
+
+        for player in online_players[..online_players.len() - 1].iter() {
+            string.push_str(&format!("{}, ", player));
+        }
+
+        string.push_str(&format!("and {}", online_players.last().unwrap()));
+        string
     }
 }
 
@@ -452,12 +559,13 @@ mod test {
         }
     }
 
-    mod format_online_players {
+    mod format_online_players_command_response {
         use super::super::format_online_players;
         use std::collections::HashSet;
 
         mod common {
             use super::*;
+            use crate::discord::util::OnlinePlayerFormat;
 
             #[test]
             fn markdown_in_names() {
@@ -466,10 +574,16 @@ mod test {
                 online_players.insert("*`p2`".into());
                 let expected = "\\*\\`p2\\` and p1\\_ are playing Minecraft";
 
-                let formatted = format_online_players(&online_players, true);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: true },
+                );
                 assert_eq!(&formatted, expected);
 
-                let formatted = format_online_players(&online_players, false);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: false },
+                );
                 assert_eq!(&formatted, expected);
             }
 
@@ -478,10 +592,16 @@ mod test {
                 let online_players = HashSet::new();
                 let expected = "Nobody is playing Minecraft";
 
-                let formatted = format_online_players(&online_players, true);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: true },
+                );
                 assert_eq!(&formatted, expected);
 
-                let formatted = format_online_players(&online_players, false);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: false },
+                );
                 assert_eq!(&formatted, expected);
             }
 
@@ -491,10 +611,16 @@ mod test {
                 online_players.insert("p1".into());
                 let expected = "p1 is playing Minecraft";
 
-                let formatted = format_online_players(&online_players, true);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: true },
+                );
                 assert_eq!(&formatted, expected);
 
-                let formatted = format_online_players(&online_players, false);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: false },
+                );
                 assert_eq!(&formatted, expected);
             }
 
@@ -505,10 +631,16 @@ mod test {
                 online_players.insert("p2".into());
                 let expected = "p1 and p2 are playing Minecraft";
 
-                let formatted = format_online_players(&online_players, true);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: true },
+                );
                 assert_eq!(&formatted, expected);
 
-                let formatted = format_online_players(&online_players, false);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: false },
+                );
                 assert_eq!(&formatted, expected);
             }
 
@@ -520,16 +652,23 @@ mod test {
                 online_players.insert("p3".into());
                 let expected = "p1, p2, and p3 are playing Minecraft";
 
-                let formatted = format_online_players(&online_players, true);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: true },
+                );
                 assert_eq!(&formatted, expected);
 
-                let formatted = format_online_players(&online_players, false);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: false },
+                );
                 assert_eq!(&formatted, expected);
             }
         }
 
         mod short {
             use super::*;
+            use crate::discord::util::OnlinePlayerFormat;
 
             #[test]
             fn four_players() {
@@ -538,7 +677,10 @@ mod test {
                 online_players.insert("p2".into());
                 online_players.insert("p3".into());
                 online_players.insert("p4".into());
-                let formatted = format_online_players(&online_players, true);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: true },
+                );
 
                 assert_eq!(
                     &formatted,
@@ -556,7 +698,10 @@ mod test {
                 online_players.insert("p6".into());
                 online_players.insert("p5".into());
                 online_players.insert("p7".into());
-                let formatted = format_online_players(&online_players, true);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: true },
+                );
 
                 assert_eq!(
                     &formatted,
@@ -567,6 +712,7 @@ mod test {
 
         mod long {
             use super::*;
+            use crate::discord::util::OnlinePlayerFormat;
 
             #[test]
             fn seven_players() {
@@ -578,13 +724,87 @@ mod test {
                 online_players.insert("p6".into());
                 online_players.insert("p5".into());
                 online_players.insert("p7".into());
-                let formatted = format_online_players(&online_players, false);
+                let formatted = format_online_players(
+                    &online_players,
+                    OnlinePlayerFormat::CommandResponse { short: false },
+                );
 
                 assert_eq!(
                     &formatted,
                     "p1, p2, p3, p4, p5, p6, and p7 are playing Minecraft"
                 );
             }
+        }
+    }
+
+    mod format_online_players_bot_status {
+        use crate::discord::util::{format_online_players, OnlinePlayerFormat};
+        use std::collections::HashSet;
+
+        #[test]
+        fn one_player() {
+            let mut online_players = HashSet::new();
+            online_players.insert("p1".into());
+            let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+
+            assert_eq!(&formatted, "Minecraft with p1");
+        }
+
+        #[test]
+        fn two_players() {
+            let mut online_players = HashSet::new();
+            online_players.insert("p1".into());
+            online_players.insert("p2".into());
+            let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+
+            assert_eq!(&formatted, "Minecraft with p1 and p2");
+        }
+
+        #[test]
+        fn three_players() {
+            let mut online_players = HashSet::new();
+            online_players.insert("p1".into());
+            online_players.insert("p2".into());
+            online_players.insert("p3".into());
+            let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+
+            assert_eq!(&formatted, "Minecraft with p1, p2, and p3");
+        }
+
+        #[test]
+        fn four_players() {
+            let mut online_players = HashSet::new();
+            online_players.insert("p1".into());
+            online_players.insert("p2".into());
+            online_players.insert("p3".into());
+            online_players.insert("p4".into());
+            let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+
+            assert_eq!(&formatted, "Minecraft with p1, p2, p3, and p4");
+        }
+
+        #[test]
+        fn lots_of_players() {
+            let mut online_players = HashSet::new();
+            online_players.insert("player1".into());
+            online_players.insert("player2".into());
+            online_players.insert("player3".into());
+            online_players.insert("player4".into());
+            online_players.insert("player5".into());
+            online_players.insert("player6".into());
+            online_players.insert("player7".into());
+            online_players.insert("player8".into());
+            online_players.insert("player9".into());
+            online_players.insert("player10".into());
+            online_players.insert("player11".into());
+            online_players.insert("player12".into());
+            online_players.insert("player13".into());
+            online_players.insert("player14".into());
+            online_players.insert("player15".into());
+            let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+
+            assert_eq!(&formatted, "Minecraft with player1, player10, player11, player12, player13, player14, player15, player2, and player3 (+ 6 more)");
+            assert!(formatted.len() <= 128);
         }
     }
 }

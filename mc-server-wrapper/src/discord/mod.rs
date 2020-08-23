@@ -13,7 +13,11 @@ use twilight::{
     http::{request::prelude::create_message::CreateMessageError, Client as DiscordClient},
     model::{
         channel::{message::MessageType, Message},
-        gateway::{payload::RequestGuildMembers, GatewayIntents},
+        gateway::{
+            payload::{RequestGuildMembers, UpdateStatus},
+            presence::Status,
+            GatewayIntents,
+        },
         id::{ChannelId, GuildId, UserId},
     },
 };
@@ -21,7 +25,9 @@ use twilight::{
 use mc_server_wrapper_lib::{communication::*, parse::*};
 use minecraft_protocol::chat::{Color, Payload};
 
-use util::{format_mentions_in, format_online_players, tellraw_prefix};
+use util::{
+    activity, format_mentions_in, format_online_players, tellraw_prefix, OnlinePlayerFormat,
+};
 
 use crate::ONLINE_PLAYERS;
 use futures::future;
@@ -33,13 +39,17 @@ pub mod util;
 static CHAT_PREFIX: &str = "[D] ";
 
 /// Sets up a `DiscordBridge` and starts handling events
+///
+/// If `allow_status_updates` is set to `false` any calls to `update_status()`
+/// will be no-ops
 pub async fn setup_discord(
     token: String,
     bridge_channel_id: ChannelId,
     mc_cmd_sender: Sender<ServerCommand>,
+    allow_status_updates: bool,
 ) -> anyhow::Result<DiscordBridge> {
     info!("Setting up Discord");
-    let discord = DiscordBridge::new(token, bridge_channel_id).await?;
+    let discord = DiscordBridge::new(token, bridge_channel_id, allow_status_updates).await?;
 
     let discord_clone = discord.clone();
     tokio::spawn(async move {
@@ -84,6 +94,8 @@ pub struct DiscordBridge {
     inner: Option<DiscordBridgeInner>,
     /// The ID of the channel we're bridging to
     bridge_channel_id: ChannelId,
+    /// If set to `false` calls to `update_status()` will be no-ops
+    allow_status_updates: bool,
 }
 
 // Groups together optionally-present things
@@ -98,7 +110,14 @@ struct DiscordBridgeInner {
 
 impl DiscordBridge {
     /// Connects to Discord with the given `token` and `bridge_channel_id`
-    pub async fn new(token: String, bridge_channel_id: ChannelId) -> anyhow::Result<Self> {
+    ///
+    /// If `allow_status_updates` is set to `false` any calls to `update_status()`
+    /// will be no-ops
+    pub async fn new(
+        token: String,
+        bridge_channel_id: ChannelId,
+        allow_status_updates: bool,
+    ) -> anyhow::Result<Self> {
         let client = DiscordClient::new(&token);
         let cluster = Cluster::builder(&token)
             .intents(Some(
@@ -137,6 +156,7 @@ impl DiscordBridge {
                 cache,
             }),
             bridge_channel_id,
+            allow_status_updates,
         })
     }
 
@@ -145,6 +165,7 @@ impl DiscordBridge {
         Self {
             inner: None,
             bridge_channel_id: ChannelId(0),
+            allow_status_updates: false,
         }
     }
 
@@ -303,7 +324,10 @@ impl DiscordBridge {
                             Command { name: "list", .. } => {
                                 let response = {
                                     let online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
-                                    format_online_players(&online_players, false)
+                                    format_online_players(
+                                        &online_players,
+                                        OnlinePlayerFormat::CommandResponse { short: false },
+                                    )
                                 };
 
                                 self.clone().send_channel_msg(response);
@@ -535,6 +559,43 @@ impl DiscordBridge {
                             validation_err
                         ),
                     },
+                }
+            }
+        })
+    }
+
+    /// Sets the bot's status to the given text
+    ///
+    /// A new task is spawned to update the status, and its `JoinHandle` is
+    /// returned so its completion can be `await`ed if desired.
+    ///
+    /// This will be a no-op if `self.allow_status_updates` is false
+    pub fn update_status<T: Into<String> + Send + 'static>(
+        self,
+        text: T,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            if !self.allow_status_updates {
+                return;
+            }
+            let text = text.into();
+
+            if let Some(inner) = self.inner {
+                for shard_id in inner.cluster.info().keys() {
+                    if let Some(shard) = inner.cluster.shard(*shard_id) {
+                        match shard
+                            .command(&UpdateStatus::new(
+                                false,
+                                activity(text.clone()),
+                                None,
+                                Status::Online,
+                            ))
+                            .await
+                        {
+                            Ok(()) => {}
+                            Err(e) => warn!("Failed to update bot's status: {}", e),
+                        }
+                    }
                 }
             }
         })
