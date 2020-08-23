@@ -224,7 +224,7 @@ impl DiscordBridge {
         };
 
         if let Some(member) = maybe_member {
-            Some(self.cache().unwrap().cache_member(guild_id, member).await)
+            Some(self.cache().unwrap().cache_member(guild_id, member))
         } else {
             None
         }
@@ -243,18 +243,7 @@ impl DiscordBridge {
         user_id: UserId,
     ) -> Option<Arc<CachedMember>> {
         // First check the cache
-        let mut maybe_cached_member = match self.cache().unwrap().member(guild_id, user_id).await {
-            Ok(maybe_cached_member) => maybe_cached_member,
-            Err(e) => {
-                log::warn!(
-                    "Failed to get guild member from cache for guild_id {} and user_id {}: {}",
-                    guild_id,
-                    user_id,
-                    e
-                );
-                None
-            }
-        };
+        let mut maybe_cached_member = self.cache().unwrap().member(guild_id, user_id);
 
         // The member wasn't cached; see if we can grab and cache their data with an API
         // request
@@ -447,8 +436,7 @@ impl DiscordBridge {
             mentions_map,
             &msg.mention_roles,
             cache.clone(),
-        )
-        .await;
+        );
 
         let tellraw_msg = tellraw_prefix()
             .then(Payload::text(&format!(

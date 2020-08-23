@@ -13,6 +13,7 @@ Not production-ready, but getting there. Feel free to use it for non-critical se
     * Commands (prefixed by `!mc`):
         * `list`: replies with a list of people playing Minecraft
     * Embeds, mentions, and attachments in Discord messages are neatly formatted in Minecraft
+    * Bot status message displays server info (such as the names of online players)
 * Run server with configurable memory allocation
     * Also allows passing custom JVM flags if desired
 * Restart server on crash
