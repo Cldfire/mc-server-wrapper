@@ -4,6 +4,8 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+## [alpha2] - 2020-08-22
+
 ### Added
 
 * The bot's status message is now updated with server information (such as the names of online players)
@@ -13,5 +15,6 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 Tagging a first alpha release after a few months of working on the project.
 
-[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha1...HEAD
+[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha2...HEAD
+[alpha2]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha1...alpha2
 [alpha1]: https://github.com/Cldfire/mc-server-wrapper/releases/tag/alpha1
