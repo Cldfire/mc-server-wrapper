@@ -1,6 +1,6 @@
 use std::{collections::HashSet, path::PathBuf, time::Instant};
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 
 use tokio::{
     stream::StreamExt,
@@ -16,22 +16,23 @@ use mc_server_wrapper_lib::{
     communication::*, parse::*, McServerConfig, McServerManager, CONSOLE_MSG_LOG_TARGET,
 };
 
-use dotenv::dotenv;
 use log::*;
 
 use crate::discord::{util::sanitize_for_markdown, *};
 
 use crate::ui::TuiState;
 
+use config::Config;
 use crossterm::{
     event::{Event, EventStream, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
-use structopt::{clap::AppSettings, StructOpt};
+use structopt::StructOpt;
 use tui::{backend::CrosstermBackend, Terminal};
 use util::{format_online_players, OnlinePlayerFormat};
 
+mod config;
 mod discord;
 mod logging;
 mod ui;
@@ -40,61 +41,43 @@ mod ui;
 static ONLINE_PLAYERS: OnceCell<Mutex<HashSet<String>>> = OnceCell::new();
 
 #[derive(StructOpt, Debug)]
-#[structopt(settings(&[AppSettings::ColoredHelp]))]
 pub struct Opt {
+    /// Path to config
+    #[structopt(
+        short = "c",
+        long,
+        parse(from_os_str),
+        default_value = "./mc-server-wrapper-config.toml"
+    )]
+    config: PathBuf,
+
+    /// Generate a default config and then exit the program
+    #[structopt(short = "g", long)]
+    gen_config: bool,
+
     /// Path to the Minecraft server jar
     #[structopt(parse(from_os_str))]
-    server_path: PathBuf,
-
-    /// Discord bot token (for Discord chat bridge)
-    #[structopt(long, env, hide_env_values = true)]
-    discord_token: Option<String>,
-
-    /// Discord channel ID (for Discord chat bridge)
-    #[structopt(long, env)]
-    discord_channel_id: Option<u64>,
+    server_path: Option<PathBuf>,
 
     /// Bridge server chat to discord
     #[structopt(short = "b", long)]
     bridge_to_discord: bool,
-
-    /// Amount of memory in megabytes to allocate for the server
-    #[structopt(short = "m", long, default_value = "1024")]
-    memory: u16,
-
-    /// Logging level for mc-server-wrapper dependencies [error, warn, info,
-    /// debug, trace]
-    ///
-    /// This only affects file logging.
-    #[structopt(long, env, default_value = "warn")]
-    log_level_all: log::Level,
-
-    /// Logging level for mc-server-wrapper [error, warn, info, debug, trace]
-    ///
-    /// This overrides --log-level-all and only affects file logging.
-    #[structopt(long, env, default_value = "debug")]
-    log_level_self: log::Level,
-
-    /// Logging level for Discord-related dependencies [error, warn, info,
-    /// debug, trace]
-    ///
-    /// This overrides --log-level-all and only affects file logging.
-    #[structopt(long, env, default_value = "info")]
-    log_level_discord: log::Level,
-
-    /// Custom flags to pass to the JVM
-    #[structopt(env, raw(true))]
-    jvm_flags: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     log_panics::init();
-    dotenv().ok();
     CONSOLE_MSG_LOG_TARGET.set("mc").unwrap();
     ONLINE_PLAYERS.set(Mutex::new(HashSet::new())).unwrap();
 
     let opt = Opt::from_args();
+    let mut config = Config::load(&opt.config).await?;
+
+    if opt.gen_config {
+        return Ok(());
+    }
+
+    config.merge_in_args(opt)?;
     let (log_sender, mut log_receiver) = mpsc::channel(64);
     let stdout = std::io::stdout();
     let backend = CrosstermBackend::new(stdout);
@@ -109,15 +92,23 @@ async fn main() -> anyhow::Result<()> {
     }
 
     logging::setup_logger(
-        opt.server_path.with_file_name("mc-server-wrapper.log"),
+        config
+            .minecraft
+            .server_path
+            .with_file_name("mc-server-wrapper.log"),
         log_sender,
-        opt.log_level_all,
-        opt.log_level_self,
-        opt.log_level_discord,
+        config.logging.all,
+        config.logging.self_level,
+        config.logging.discord,
     )
     .with_context(|| "Failed to set up logging")?;
 
-    let mc_config = McServerConfig::new(opt.server_path.clone(), opt.memory, opt.jvm_flags, false);
+    let mc_config = McServerConfig::new(
+        config.minecraft.server_path.clone(),
+        config.minecraft.memory,
+        config.minecraft.jvm_flags,
+        false,
+    );
     let (mc_server, mut mc_cmd_sender, mut mc_event_receiver) = McServerManager::new();
 
     info!("Starting the Minecraft server");
@@ -130,33 +121,19 @@ async fn main() -> anyhow::Result<()> {
     let mut last_start_time = Instant::now();
 
     // TODO: start drawing UI before setting up discord
-    let discord = if opt.bridge_to_discord {
-        if opt.discord_channel_id.is_none() {
-            return Err(anyhow!(
-                "Discord bridge was enabled but a channel ID to bridge to was not provided"
-            ));
+    let discord = if let Some(discord_config) = config.discord {
+        if discord_config.enable_bridge {
+            setup_discord(
+                discord_config.token,
+                ChannelId(discord_config.channel_id),
+                mc_cmd_sender.clone(),
+                discord_config.update_status,
+            )
+            .await
+            .with_context(|| "Failed to connect to Discord")?
+        } else {
+            DiscordBridge::new_noop()
         }
-
-        if opt.discord_token.is_none() {
-            return Err(anyhow!(
-                "Discord bridge was enabled but an API token for a Discord bot was not provided"
-            ));
-        }
-
-        setup_discord(
-            opt.discord_token.unwrap(),
-            ChannelId(opt.discord_channel_id.unwrap()),
-            mc_cmd_sender.clone(),
-            // Allows for disabling status updates while developing to avoid messing
-            // with a prod bot account
-            // TODO: move to config
-            match std::env::var("NO_UPDATE_STATUS") {
-                Ok(s) if s == "1" => false,
-                _ => true,
-            },
-        )
-        .await
-        .with_context(|| "Failed to connect to Discord")?
     } else {
         DiscordBridge::new_noop()
     };

@@ -36,13 +36,53 @@ cargo install --git https://github.com/Cldfire/mc-server-wrapper.git
 
 ## Usage
 
-Point the wrapper at a Minecraft server jar:
+Generate a default config (customize the config path with the `-c` flag if desired):
 
 ```
-mc-server-wrapper path/to/server.jar
+mc-server-wrapper -g
 ```
 
-Run `mc-server-wrapper --help` for more options.
+Edit the config as required, explanation of options below. You can then start the server with the following (if you used the `-c` flag above use it again here):
+
+```
+mc-server-wrapper
+```
+
+Run `mc-server-wrapper --help` for some CLI args to quickly override the config with.
+
+### Config
+
+```toml
+[minecraft]
+# The path to the server jar
+server_path = "./server.jar"
+# The memory in megabytes to allocate for the server
+memory = 1024
+# If you would like to pass custom flags to the JVM you can do so here
+jvm_flags = "-XX:MaxGCPauseMillis=200"
+
+# The Discord section is optional
+[discord]
+# Enable or disable the Discord bridge
+enable_bridge = true
+# The Discord bot token
+token = "..."
+# The Discord channel ID to bridge to
+channel_id = 123
+# Enable or disable bot status message updates
+update_status = true
+
+# Valid log levels: error, warn, info, debug, trace
+#
+# Logging levels set here only affect file logging
+[logging]
+# The log level for general mc-server-wrapper dependencies
+all = "Warn"
+# The log level for mc-server-wrapper
+self = "Debug"
+# The log level for Discord-related dependencies
+discord = "Info"
+```
 
 ### Discord bridge setup
 
@@ -51,20 +91,8 @@ Run `mc-server-wrapper --help` for more options.
   * This is used to receive member updates from your guild (such as when someone changes their nickname so we can change the name we display in-game)
 * Add the bot to the guild you want to bridge to
 * Get the ID of the channel you want to bridge to (Google this for instructions)
-* Provide the bot token and channel ID either through the CLI or through the evironment variables listed below:
-
-```
-DISCORD_TOKEN="..."
-DISCORD_CHANNEL_ID="..."
-```
-
-These environment variables can also be provided in a `.env` file of the above format. See [dotenv](https://github.com/dotenv-rs/dotenv) for more.
-
-Make sure you start the wrapper with the `-b` flag:
-
-```
-mc-server-wrapper -b path/to/server.jar
-```
+* Provide the bot token and channel ID in the config file
+* Enable the Discord bridge in the config file or with the `-b` flag
 
 ## Future plans
 

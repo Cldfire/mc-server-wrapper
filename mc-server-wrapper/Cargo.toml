@@ -10,11 +10,10 @@ mc-server-wrapper-lib = { path = "../mc-server-wrapper-lib" }
 structopt = "0.3"
 tokio = { version = "0.2", features = ["full"] }
 futures = "0.3"
-dotenv = "0.15"
 twilight = { branch = "trunk", git = "https://github.com/twilight-rs/twilight.git" }
 minecraft-protocol = "0.1"
 log = "0.4"
-fern = { version = "0.6", features = ["colored"] }
+fern = "0.6"
 log-panics = "2.0"
 chrono = "0.4"
 once_cell = "1.4"
@@ -25,6 +24,9 @@ tui = { version = "0.10", default-features = false, features = ['crossterm'] }
 unicode-width = "0.1"
 ringbuffer = "0.2.2"
 textwrap = "0.12"
+toml = "0.5"
+serde = "1.0"
+serde_derive = "1.0"
 
 [dev-dependencies]
 rusty-hook = "^0.11.1"

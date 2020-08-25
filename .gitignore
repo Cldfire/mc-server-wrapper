@@ -1,6 +1,7 @@
 /target
 **/*.rs.bk
 /test-servers
+mc-server-wrapper-config.toml
 .ds_store
 .env
 .vscode
