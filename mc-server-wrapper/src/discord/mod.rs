@@ -1,13 +1,7 @@
 use log::{debug, info, warn};
 
 use twilight::{
-    cache::{
-        twilight_cache_inmemory::{
-            config::{EventType, InMemoryConfigBuilder},
-            model::CachedMember,
-        },
-        InMemoryCache,
-    },
+    cache_inmemory::{model::CachedMember, EventType, InMemoryCache},
     command_parser::{Command, CommandParserConfig, Parser},
     gateway::{Cluster, Event},
     http::{request::prelude::create_message::CreateMessageError, Client as DiscordClient},
@@ -65,9 +59,8 @@ pub async fn setup_discord(
             let cmd_sender_clone = mc_cmd_sender.clone();
             let cmd_parser_clone = cmd_parser.clone();
 
-            if let Err(e) = discord.inner.as_ref().unwrap().cache.update(&e.1).await {
-                warn!("Failed to update Discord cache: {}", e);
-            }
+            // Update the cache
+            discord.inner.as_ref().unwrap().cache.update(&e.1);
 
             tokio::spawn(async move {
                 if let Err(e) = discord
@@ -133,7 +126,7 @@ impl DiscordBridge {
             cluster_spawn.up().await;
         });
 
-        let cache_config = InMemoryConfigBuilder::new()
+        let cache = InMemoryCache::builder()
             .event_types(
                 EventType::GUILD_CREATE
                     | EventType::GUILD_UPDATE
@@ -147,7 +140,6 @@ impl DiscordBridge {
                     | EventType::MEMBER_UPDATE,
             )
             .build();
-        let cache = InMemoryCache::from(cache_config);
 
         Ok(Self {
             inner: Some(DiscordBridgeInner {
@@ -179,11 +171,6 @@ impl DiscordBridge {
         self.inner.as_ref().map(|i| &i.cluster)
     }
 
-    /// Provides access to the `Client` inside this struct
-    pub fn client(&self) -> Option<DiscordClient> {
-        self.inner.as_ref().map(|i| i.client.clone())
-    }
-
     /// Provides access to the `InMemoryCache` inside this struct
     pub fn cache(&self) -> Option<InMemoryCache> {
         self.inner.as_ref().map(|i| i.cache.clone())
@@ -201,57 +188,33 @@ impl DiscordBridge {
         Parser::new(config)
     }
 
-    /// Get and cache the member specified by the given IDs
-    ///
-    /// The cached member will be returned so you can make use of the data right
-    /// away.
-    pub async fn get_and_cache_guild_member(
-        &self,
-        guild_id: GuildId,
-        user_id: UserId,
-    ) -> Option<Arc<CachedMember>> {
-        let maybe_member = match self.client().unwrap().guild_member(guild_id, user_id).await {
-            Ok(maybe_member) => maybe_member,
-            Err(e) => {
-                log::warn!(
-                    "Failed to get guild member from API for guild_id {} and user_id {}: {}",
-                    guild_id,
-                    user_id,
-                    e
-                );
-                None
-            }
-        };
-
-        if let Some(member) = maybe_member {
-            Some(self.cache().unwrap().cache_member(guild_id, member))
-        } else {
-            None
-        }
-    }
-
     /// Get cached info for the guild member specified by the given IDs
     ///
-    /// `None` will be returned if something went wrong.
-    ///
-    /// This method first checks the cache for the member and, if the member
-    /// isn't present, then performs an API request for the member's info,
-    /// caching it upon success for future runs.
+    /// `None` will be returned if the member is not present in the cache.
+    //
+    // TODO: previously this was used to try fetching the member info over the HTTP
+    // api if the member was not cached. Unfortunately support for caching out-of-band
+    // like that was removed from twilight's inmemory cache crate, so we can't do that
+    // any more.
+    //
+    // This method just exists to log failures to find requested member info in the
+    // cache for now.
     pub async fn obtain_guild_member(
         &self,
         guild_id: GuildId,
         user_id: UserId,
     ) -> Option<Arc<CachedMember>> {
         // First check the cache
-        let mut maybe_cached_member = self.cache().unwrap().member(guild_id, user_id);
+        if let Some(cached_member) = self.cache().unwrap().member(guild_id, user_id) {
+            Some(cached_member)
+        } else {
+            warn!(
+                "Member info for user with guild_id {} and user_id {} was not cached",
+                guild_id, user_id
+            );
 
-        // The member wasn't cached; see if we can grab and cache their data with an API
-        // request
-        if maybe_cached_member.is_none() {
-            maybe_cached_member = self.get_and_cache_guild_member(guild_id, user_id).await;
+            None
         }
-
-        maybe_cached_member
     }
 
     /// Handle an event from Discord

@@ -2,7 +2,7 @@ use super::CHAT_PREFIX;
 use minecraft_protocol::chat::{Color, MessageBuilder, Payload};
 use std::collections::{HashMap, HashSet};
 use twilight::{
-    cache::InMemoryCache,
+    cache_inmemory::InMemoryCache,
     model::{
         gateway::presence::{Activity, ActivityType},
         id::{ChannelId, RoleId, UserId},
@@ -341,43 +341,48 @@ mod test {
         use super::super::format_mentions_in;
         use std::collections::HashMap;
         use twilight::{
-            cache::InMemoryCache,
+            cache_inmemory::InMemoryCache,
             model::{
-                channel::{ChannelType, GuildChannel, TextChannel},
+                channel::{Channel, ChannelType, GuildChannel, TextChannel},
+                gateway::{event::Event, payload},
                 guild::{Permissions, Role},
                 id::{ChannelId, GuildId, RoleId, UserId},
             },
         };
 
-        fn make_text_channel() -> TextChannel {
-            TextChannel {
-                id: ChannelId(1234),
-                guild_id: Some(GuildId(0)),
-                kind: ChannelType::GuildText,
-                last_message_id: None,
-                last_pin_timestamp: None,
-                name: "test-channel".into(),
-                nsfw: false,
-                permission_overwrites: vec![],
-                parent_id: None,
-                position: 0,
-                rate_limit_per_user: None,
-                topic: Some("a test channel".into()),
-            }
+        fn make_text_channel() -> Event {
+            Event::ChannelCreate(payload::ChannelCreate(Channel::Guild(GuildChannel::Text(
+                TextChannel {
+                    id: ChannelId(1234),
+                    guild_id: Some(GuildId(0)),
+                    kind: ChannelType::GuildText,
+                    last_message_id: None,
+                    last_pin_timestamp: None,
+                    name: "test-channel".into(),
+                    nsfw: false,
+                    permission_overwrites: vec![],
+                    parent_id: None,
+                    position: 0,
+                    rate_limit_per_user: None,
+                    topic: Some("a test channel".into()),
+                },
+            ))))
         }
 
-        fn make_role() -> Role {
-            Role {
-                id: RoleId(2345),
-                color: 0,
-                hoist: false,
-                managed: false,
-                mentionable: true,
-                name: "test-role".into(),
-                permissions_old: Permissions::empty(),
-                permissions: Permissions::empty(),
-                position: 0,
-            }
+        fn make_role() -> Event {
+            Event::RoleCreate(payload::RoleCreate {
+                guild_id: GuildId(0),
+                role: Role {
+                    id: RoleId(2345),
+                    color: 0,
+                    hoist: false,
+                    managed: false,
+                    mentionable: true,
+                    name: "test-role".into(),
+                    permissions: Permissions::empty(),
+                    position: 0,
+                },
+            })
         }
 
         #[test]
@@ -476,7 +481,7 @@ mod test {
             let msg = "this is a channel mention: <#1234>";
 
             let cache = InMemoryCache::new();
-            cache.cache_guild_channel(GuildId(0), GuildChannel::Text(make_text_channel()));
+            cache.update(&make_text_channel());
 
             let formatted = format_mentions_in(msg, HashMap::new(), &[], cache);
             assert_eq!(formatted, "this is a channel mention: #test-channel");
@@ -487,7 +492,7 @@ mod test {
             let msg = "<@1234> <#245> this is a channel mention: <#1234>";
 
             let cache = InMemoryCache::new();
-            cache.cache_guild_channel(GuildId(0), GuildChannel::Text(make_text_channel()));
+            cache.update(&make_text_channel());
 
             let formatted = format_mentions_in(msg, HashMap::new(), &[], cache);
             assert_eq!(
@@ -509,7 +514,7 @@ mod test {
             let msg = "this is a role mention: <@&2345>";
 
             let cache = InMemoryCache::new();
-            cache.cache_role(GuildId(0), make_role());
+            cache.update(&make_role());
 
             let formatted = format_mentions_in(msg, HashMap::new(), &[], cache);
             assert_eq!(formatted, msg);
@@ -520,7 +525,7 @@ mod test {
             let msg = "this is a role mention: <@&2345>";
 
             let cache = InMemoryCache::new();
-            cache.cache_role(GuildId(0), make_role());
+            cache.update(&make_role());
 
             let formatted = format_mentions_in(msg, HashMap::new(), &[RoleId(2345)], cache);
             assert_eq!(formatted, "this is a role mention: @test-role");
@@ -534,8 +539,8 @@ mod test {
             mentions.insert(UserId(1212), "TestName");
 
             let cache = InMemoryCache::new();
-            cache.cache_role(GuildId(0), make_role());
-            cache.cache_guild_channel(GuildId(0), GuildChannel::Text(make_text_channel()));
+            cache.update(&make_role());
+            cache.update(&make_text_channel());
 
             let formatted = format_mentions_in(msg, mentions, &[RoleId(2345)], cache);
             assert_eq!(
