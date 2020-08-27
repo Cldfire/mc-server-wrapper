@@ -28,6 +28,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
+use notify::DebouncedEvent;
 use structopt::StructOpt;
 use tui::{backend::CrosstermBackend, Terminal};
 use util::{format_online_players, OnlinePlayerFormat};
@@ -71,7 +72,9 @@ async fn main() -> anyhow::Result<()> {
     ONLINE_PLAYERS.set(Mutex::new(HashSet::new())).unwrap();
 
     let opt = Opt::from_args();
-    let mut config = Config::load(&opt.config).await?;
+    let config_filepath = opt.config.clone();
+    let mut config = Config::load(&config_filepath).await?;
+    let mut notify_receiver = config.setup_watcher(config_filepath.clone());
 
     if opt.gen_config {
         return Ok(());
@@ -346,6 +349,20 @@ async fn main() -> anyhow::Result<()> {
                     },
                 }
             },
+            config_file_event = notify_receiver.next() => {
+                match config_file_event {
+                    Some(event) => match event {
+                        DebouncedEvent::Write(path) => {
+                            // this currently is not used for anything, it's here
+                            // for future use
+                            debug!("The config file was changed, path: {:?}", path);
+                        },
+                        _ => debug!("Received non-applicable file watch event")
+                    },
+                    // TODO: should we break or panic in these cases?
+                    None => unreachable!()
+                }
+            }
             // TODO: get rid of this
             else => break,
         }

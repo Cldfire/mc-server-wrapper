@@ -1,10 +1,15 @@
 use crate::Opt;
 use anyhow::{anyhow, Context};
+use notify::{DebouncedEvent, RecursiveMode, Watcher};
 use serde_derive::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
+    sync::mpsc,
 };
 
 /// Represents the mc-server-wrapper config structure
@@ -92,6 +97,42 @@ impl Config {
         }
 
         Ok(())
+    }
+
+    /// Setup a file watcher to be notified when the config file changes
+    ///
+    /// This spawns a separate thread to watch the config file because there aren't
+    /// any file watcher libs that integrate with tokio right now.
+    pub fn setup_watcher(
+        &self,
+        config_filepath: impl Into<PathBuf>,
+    ) -> mpsc::Receiver<DebouncedEvent> {
+        let (notify_sender, notify_receiver) = mpsc::channel(8);
+        let config_filepath = config_filepath.into();
+        let handle = tokio::runtime::Handle::current();
+
+        std::thread::spawn(move || {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let mut watcher = notify::watcher(tx, Duration::from_millis(300)).unwrap();
+
+            // Watch for changes to config file
+            watcher
+                .watch(&config_filepath, RecursiveMode::NonRecursive)
+                .unwrap();
+
+            loop {
+                // rx.recv() can only error if the sender was disconnected
+                //
+                // This should never occur, so it's safe to unwrap here
+                let event = rx.recv().unwrap();
+                let mut sender_clone = notify_sender.clone();
+                handle.block_on(async move {
+                    sender_clone.send(event).await.unwrap();
+                });
+            }
+        });
+
+        notify_receiver
     }
 }
 

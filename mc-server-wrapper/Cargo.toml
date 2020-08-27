@@ -27,6 +27,7 @@ textwrap = "0.12"
 toml = "0.5"
 serde = "1.0"
 serde_derive = "1.0"
+notify = "4.0"
 
 [dev-dependencies]
 rusty-hook = "^0.11.1"
