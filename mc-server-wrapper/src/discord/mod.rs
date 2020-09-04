@@ -10,7 +10,7 @@ use twilight::{
         gateway::{
             payload::{RequestGuildMembers, UpdateStatus},
             presence::Status,
-            GatewayIntents,
+            Intents,
         },
         id::{ChannelId, GuildId, UserId},
     },
@@ -114,9 +114,7 @@ impl DiscordBridge {
         let client = DiscordClient::new(&token);
         let cluster = Cluster::builder(&token)
             .intents(Some(
-                GatewayIntents::GUILDS
-                    | GatewayIntents::GUILD_MESSAGES
-                    | GatewayIntents::GUILD_MEMBERS,
+                Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::GUILD_MEMBERS,
             ))
             .build()
             .await?;
@@ -252,7 +250,10 @@ impl DiscordBridge {
                     // all member info right out of the gate
                     self.cluster()
                         .unwrap()
-                        .command(shard_id, &RequestGuildMembers::new_all(guild.id, None))
+                        .command(
+                            shard_id,
+                            &RequestGuildMembers::builder(guild.id).query("", None),
+                        )
                         .await?;
                 } else {
                     info!("Connected to guild '{}'", guild.name);
