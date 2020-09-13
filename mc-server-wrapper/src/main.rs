@@ -10,7 +10,7 @@ use tokio::{
 use once_cell::sync::OnceCell;
 use scopeguard::defer;
 
-use twilight::model::id::ChannelId;
+use twilight_model::id::ChannelId;
 
 use mc_server_wrapper_lib::{
     communication::*, parse::*, McServerConfig, McServerManager, CONSOLE_MSG_LOG_TARGET,

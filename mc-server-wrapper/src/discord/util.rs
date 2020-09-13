@@ -1,12 +1,10 @@
 use super::CHAT_PREFIX;
 use minecraft_protocol::chat::{Color, MessageBuilder, Payload};
 use std::collections::{HashMap, HashSet};
-use twilight::{
-    cache_inmemory::InMemoryCache,
-    model::{
-        gateway::presence::{Activity, ActivityType},
-        id::{ChannelId, RoleId, UserId},
-    },
+use twilight_cache_inmemory::InMemoryCache;
+use twilight_model::{
+    gateway::presence::{Activity, ActivityType},
+    id::{ChannelId, RoleId, UserId},
 };
 
 /// Returns a `MessageBuilder` with a nice prefix for Discord messages in
@@ -340,14 +338,12 @@ mod test {
     mod content_format_mentions {
         use super::super::format_mentions_in;
         use std::collections::HashMap;
-        use twilight::{
-            cache_inmemory::InMemoryCache,
-            model::{
-                channel::{Channel, ChannelType, GuildChannel, TextChannel},
-                gateway::{event::Event, payload},
-                guild::{Permissions, Role},
-                id::{ChannelId, GuildId, RoleId, UserId},
-            },
+        use twilight_cache_inmemory::InMemoryCache;
+        use twilight_model::{
+            channel::{Channel, ChannelType, GuildChannel, TextChannel},
+            gateway::{event::Event, payload},
+            guild::{Permissions, Role},
+            id::{ChannelId, GuildId, RoleId, UserId},
         };
 
         fn make_text_channel() -> Event {

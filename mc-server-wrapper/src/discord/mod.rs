@@ -1,19 +1,19 @@
 use log::{debug, info, warn};
 
-use twilight::{
-    cache_inmemory::{model::CachedMember, EventType, InMemoryCache},
-    command_parser::{Command, CommandParserConfig, Parser},
-    gateway::{Cluster, Event},
-    http::{request::prelude::create_message::CreateMessageError, Client as DiscordClient},
-    model::{
-        channel::{message::MessageType, Message},
-        gateway::{
-            payload::{RequestGuildMembers, UpdateStatus},
-            presence::Status,
-            Intents,
-        },
-        id::{ChannelId, GuildId, UserId},
+use twilight_cache_inmemory::{model::CachedMember, EventType, InMemoryCache};
+use twilight_command_parser::{Command, CommandParserConfig, Parser};
+use twilight_gateway::{Cluster, Event};
+use twilight_http::{
+    request::prelude::create_message::CreateMessageError, Client as DiscordClient,
+};
+use twilight_model::{
+    channel::{message::MessageType, Message},
+    gateway::{
+        payload::{RequestGuildMembers, UpdateStatus},
+        presence::Status,
+        Intents,
     },
+    id::{ChannelId, GuildId, UserId},
 };
 
 use mc_server_wrapper_lib::{communication::*, parse::*};
@@ -113,9 +113,7 @@ impl DiscordBridge {
     ) -> anyhow::Result<Self> {
         let client = DiscordClient::new(&token);
         let cluster = Cluster::builder(&token)
-            .intents(Some(
-                Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::GUILD_MEMBERS,
-            ))
+            .intents(Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::GUILD_MEMBERS)
             .build()
             .await?;
 
