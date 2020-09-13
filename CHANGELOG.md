@@ -9,6 +9,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 * We no longer attempt to fetch missing member info via Discord's HTTP API if it is not present in the cache ([explanation](https://github.com/twilight-rs/twilight/pull/437))
   * This should not have any user-facing impact because technically speaking all needed info will be present in the cache anyway
 
+### Fixed
+
+* Minecraft player names are no longer markdown-sanitized for display in the bot status (the bot status message doesn't support markdown)
+
 ### Internal
 
 * Updated to `twilight` 0.1 release from crates.io

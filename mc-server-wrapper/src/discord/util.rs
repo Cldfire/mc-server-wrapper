@@ -201,7 +201,13 @@ pub fn format_online_players(
     format: OnlinePlayerFormat,
 ) -> String {
     // Sort the players for stable name order and sanitize their names
-    let mut online_players_vec: Vec<_> = online_players.iter().map(sanitize_for_markdown).collect();
+    let mut online_players_vec: Vec<_> = online_players
+        .iter()
+        .map(|n| match format {
+            OnlinePlayerFormat::BotStatus => n.clone(),
+            OnlinePlayerFormat::CommandResponse { .. } => sanitize_for_markdown(n),
+        })
+        .collect();
     online_players_vec.sort();
 
     match format {
