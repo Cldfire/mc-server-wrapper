@@ -2,9 +2,10 @@ use super::CHAT_PREFIX;
 use minecraft_protocol::chat::{Color, MessageBuilder, Payload};
 use std::collections::{HashMap, HashSet};
 use twilight_cache_inmemory::InMemoryCache;
+use twilight_mention::{parse::MentionType, ParseMention};
 use twilight_model::{
     gateway::presence::{Activity, ActivityType},
-    id::{ChannelId, RoleId, UserId},
+    id::{RoleId, UserId},
 };
 
 /// Returns a `MessageBuilder` with a nice prefix for Discord messages in
@@ -47,137 +48,48 @@ pub fn activity(name: String) -> Activity {
 ///
 /// The given `cache` is used to get data to replace channel and role mention
 /// names with
-// TODO: this code is complicated, explore strategies to simplify?
-// TODO: does not handle escaped mentions (but this is a SUPER edge case and
-// the Discord client doesn't even handle those right either)
-pub fn format_mentions_in<S: Into<String>>(
+pub fn format_mentions_in<S: AsRef<str>>(
     content: S,
     mentions: HashMap<UserId, &str>,
     mention_roles: &[RoleId],
     cache: InMemoryCache,
 ) -> String {
-    enum MentionType {
-        User,
-        UserNickname,
-        Channel,
-        Role,
-        Unknown,
-    }
-    let mut content = content.into();
+    let mut output = content.as_ref().to_owned();
+    let parsed_mentions = MentionType::iter(content.as_ref()).collect::<Vec<_>>();
 
-    let mut content_slice = &content.clone()[..];
-    while let Some(idx) = content_slice.find('<') {
-        let mut mention_type = MentionType::Unknown;
-        let mut possible_id = "";
-        let mut closing_angle_idx = None;
-
-        // Grabs the stuff between the start of a possible mention and the next
-        // closing bracket
-        let mut possible_id_after = |forward_idx: usize| {
-            closing_angle_idx = if let Some(forward_slice) = content_slice.get(forward_idx..) {
-                // We need to make sure we only look for a closing bracket after
-                // the "mention-beginning" stuff we found, and not from the start
-                // of the entire slice (there could be a closing bracket in front
-                // of the "mention-beginning" stuff which is not what we would want
-                // to find)
-                //
-                // If we do find an index to a closing bracket, we need to add
-                // `forward_idx` to it since we are then using the found index
-                // in the original slice
-                forward_slice.find('>').map(|n| n + forward_idx)
-            } else {
-                None
-            };
-
-            if let Some(closing_angle_idx) = closing_angle_idx {
-                possible_id = &content_slice[forward_idx..closing_angle_idx];
+    for (mention_type, start, end) in parsed_mentions.into_iter().rev() {
+        match mention_type {
+            MentionType::Channel(id) => {
+                if let Some(channel) = cache.guild_channel(id) {
+                    output.replace_range(start..=end, &format!("#{}", channel.name()));
+                }
             }
-        };
-
-        // Check if this could be a mention
-        if let Some(slice) = content_slice.get(idx..idx + 3) {
-            // Note that the order of evaluation here matters
-            if slice.starts_with("<@!") {
-                mention_type = MentionType::UserNickname;
-                possible_id_after(idx + 3);
-            } else if slice.starts_with("<@&") {
-                mention_type = MentionType::Role;
-                possible_id_after(idx + 3);
-            } else if slice.starts_with("<@") {
-                // As far as I know it is correct to treat this as a user mention
-                // TODO: once `strip_prefix` is stable, merge with the above branch?
-                mention_type = MentionType::User;
-                possible_id_after(idx + 2);
-            } else if slice.starts_with("<#") {
-                mention_type = MentionType::Channel;
-                possible_id_after(idx + 2);
+            MentionType::Emoji(id) => {
+                if let Some(emoji) = cache.emoji(id) {
+                    output.replace_range(start..=end, &format!(":{}:", &emoji.name));
+                }
             }
+            MentionType::Role(RoleId(id)) => {
+                if let Some(role_id) = mention_roles.iter().find(|r| id == r.0) {
+                    if let Some(role) = cache.role(*role_id) {
+                        output.replace_range(start..=end, &format!("@{}", &role.name));
+                    }
+                }
+            }
+            MentionType::User(UserId(id)) => {
+                if let Some(name) = mentions
+                    .iter()
+                    .find(|(user_id, _)| id == user_id.0)
+                    .map(|(_, name)| name)
+                {
+                    output.replace_range(start..=end, &format!("@{}", name));
+                }
+            }
+            _ => {}
         }
-
-        // If it is a mention, replace it
-        if let Ok(id) = possible_id.parse::<u64>() {
-            let mut replace_mention = |with: &str| {
-                let idx_diff = content.len() - content_slice.len();
-                content.replace_range(
-                    // `idx` is relative to the slice into the original string
-                    // that we are adjusting the start of to proceed through
-                    // the string
-                    //
-                    // in order to index back into the original string we have
-                    // to offset the indices
-                    idx + idx_diff..=closing_angle_idx.unwrap() + idx_diff,
-                    with,
-                );
-            };
-
-            match mention_type {
-                // TODO: we should not format `MentionType::User` with the user's nick
-                // ...but it looks like Discord doesn't really follow this convention so hm
-                MentionType::User | MentionType::UserNickname => {
-                    if let Some(name) = mentions
-                        .iter()
-                        .find(|(user_id, _)| id == user_id.0)
-                        .map(|(_, name)| name)
-                    {
-                        replace_mention(&format!("@{}", name));
-                    }
-                }
-                MentionType::Channel => {
-                    if let Some(channel) = cache.guild_channel(ChannelId(id)) {
-                        replace_mention(&format!("#{}", channel.name()));
-                    }
-                }
-                MentionType::Role => {
-                    if let Some(role_id) = mention_roles.iter().find(|r| id == r.0) {
-                        if let Some(role) = cache.role(*role_id) {
-                            replace_mention(&format!("@{}", &role.name));
-                        }
-                    }
-                }
-                MentionType::Unknown => log::warn!(
-                    "Encountered unknown mention type in Discord message: {}",
-                    &content
-                ),
-            }
-        }
-
-        content_slice = if let Some(end_idx) = closing_angle_idx {
-            // If we found a closing angle bracket, either we found and handled a
-            // mention in between or there was no valid mention in between. In
-            // either case we can safely skip to it
-            &content_slice[end_idx..]
-        } else {
-            // We didn't find a closing angle bracket, so we can't do anything
-            // except skip to the next character (if one exists)
-            if let Some(more) = content_slice.get(idx + 1..) {
-                more
-            } else {
-                ""
-            }
-        };
     }
 
-    content
+    output
 }
 
 /// Different formats online player data can be turned into
