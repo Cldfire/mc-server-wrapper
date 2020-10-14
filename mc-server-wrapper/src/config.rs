@@ -27,7 +27,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             minecraft: Minecraft::default(),
-            discord: None,
+            discord: Some(Discord::default()),
             logging: Logging::default(),
         }
     }
