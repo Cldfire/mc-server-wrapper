@@ -1,5 +1,5 @@
 use crossterm::event::{Event, KeyCode};
-use ringbuffer::RingBuffer;
+use ringbuffer::{AllocRingBuffer, RingBuffer};
 use textwrap::Wrapper;
 use tui::{
     backend::Backend,
@@ -24,7 +24,7 @@ impl TuiState {
         TuiState {
             tab_state: TabsState::new(vec!["Logs".into()]),
             logs_state: LogsState {
-                records: RingBuffer::with_capacity(512),
+                records: AllocRingBuffer::with_capacity(512),
                 progress_bar: None,
             },
             input_state: InputState { value: "".into() },
@@ -149,7 +149,7 @@ pub struct LogsState {
     /// Stores the log messages to be displayed
     ///
     /// (original_message, (wrapped_message, wrapped_at_width))
-    records: RingBuffer<(String, Option<(Vec<ListItem<'static>>, u16)>)>,
+    records: AllocRingBuffer<(String, Option<(Vec<ListItem<'static>>, u16)>)>,
     /// The current state of the active progress bar (if present)
     progress_bar: Option<ProgressBarState>,
 }
