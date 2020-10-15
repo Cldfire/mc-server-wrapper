@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Display};
 
 use chrono::{Local, TimeZone, Utc};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
@@ -146,26 +146,22 @@ struct ProgressBarState {
     out_of: u32,
 }
 
-impl ProgressBarState {
-    /// Create a string for displaying the progress bar
-    fn to_string(&self) -> String {
-        let mut output = String::with_capacity(20);
-        output.push('[');
+impl Display for ProgressBarState {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("[")?;
 
         let num_progress_chars = ((self.complete as f32 / self.out_of as f32) * 10.0) as i32;
         let num_empty_chars = 10 - num_progress_chars;
 
         for _ in 0..num_progress_chars {
-            output.push('=');
+            f.write_str("=")?;
         }
 
         for _ in 0..num_empty_chars {
-            output.push(' ');
+            f.write_str(" ")?;
         }
 
-        output.push_str(&format!("] {}%", self.complete));
-
-        output
+        f.write_fmt(format_args!("] {}%", self.complete))
     }
 }
 
@@ -232,7 +228,7 @@ impl LogsState {
                     }
 
                     // If not, wrap the line and cache it
-                    *(&mut r.1) = Some((
+                    r.1 = Some((
                         wrapper
                             .wrap(r.0.as_ref())
                             .into_iter()
@@ -405,5 +401,48 @@ impl InputState {
     /// Get the current value of the input
     pub fn value(&self) -> &str {
         &self.value
+    }
+}
+
+#[cfg(test)]
+mod test {
+    mod progress_bar {
+        use crate::ui::ProgressBarState;
+
+        #[test]
+        fn progress_zero() {
+            assert_eq!(
+                ProgressBarState {
+                    complete: 0,
+                    out_of: 100
+                }
+                .to_string(),
+                "[          ] 0%"
+            );
+        }
+
+        #[test]
+        fn progress_forty() {
+            assert_eq!(
+                ProgressBarState {
+                    complete: 40,
+                    out_of: 100
+                }
+                .to_string(),
+                "[====      ] 40%"
+            );
+        }
+
+        #[test]
+        fn progress_one_hundred() {
+            assert_eq!(
+                ProgressBarState {
+                    complete: 100,
+                    out_of: 100
+                }
+                .to_string(),
+                "[==========] 100%"
+            );
+        }
     }
 }
