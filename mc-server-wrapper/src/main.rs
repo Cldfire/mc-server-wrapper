@@ -1,7 +1,8 @@
-use std::{collections::HashSet, path::PathBuf, time::Instant};
+use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 
 use anyhow::Context;
 
+use chrono::{DateTime, Utc};
 use tokio::{
     stream::StreamExt,
     sync::{mpsc, Mutex},
@@ -39,7 +40,23 @@ mod logging;
 mod ui;
 
 /// Maintains a hashset of players currently on the Minecraft server
-static ONLINE_PLAYERS: OnceCell<Mutex<HashSet<String>>> = OnceCell::new();
+///
+/// Player name -> info
+static ONLINE_PLAYERS: OnceCell<Mutex<BTreeMap<String, OnlinePlayerInfo>>> = OnceCell::new();
+
+/// Info about online players
+#[derive(Debug)]
+pub struct OnlinePlayerInfo {
+    joined_at: DateTime<Utc>,
+}
+
+impl Default for OnlinePlayerInfo {
+    fn default() -> Self {
+        Self {
+            joined_at: Utc::now(),
+        }
+    }
+}
 
 #[derive(StructOpt, Debug)]
 pub struct Opt {
@@ -69,7 +86,7 @@ pub struct Opt {
 async fn main() -> anyhow::Result<()> {
     log_panics::init();
     CONSOLE_MSG_LOG_TARGET.set("mc").unwrap();
-    ONLINE_PLAYERS.set(Mutex::new(HashSet::new())).unwrap();
+    ONLINE_PLAYERS.set(Mutex::new(BTreeMap::new())).unwrap();
 
     let opt = Opt::from_args();
     let config_filepath = opt.config.clone();
@@ -187,7 +204,7 @@ async fn main() -> anyhow::Result<()> {
                                 ));
 
                                 let mut online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
-                                online_players.insert(name);
+                                online_players.insert(name, OnlinePlayerInfo::default());
                                 discord.clone().update_status(format_online_players(
                                     &online_players,
                                     OnlinePlayerFormat::BotStatus

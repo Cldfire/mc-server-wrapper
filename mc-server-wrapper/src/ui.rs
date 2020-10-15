@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::BTreeMap;
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
@@ -12,6 +12,8 @@ use tui::{
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
+
+use crate::OnlinePlayerInfo;
 
 /// Represents the current state of the terminal UI
 #[derive(Debug)]
@@ -36,7 +38,11 @@ impl TuiState {
     }
 
     /// Draw the current state to the given frame
-    pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>, online_players: &HashSet<String>) {
+    pub fn draw<B: Backend>(
+        &mut self,
+        f: &mut Frame<B>,
+        online_players: &BTreeMap<String, OnlinePlayerInfo>,
+    ) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(2), Constraint::Min(0)].as_ref())
@@ -301,11 +307,14 @@ pub struct PlayersState;
 
 impl PlayersState {
     /// Draw the current state in the given `area`
-    fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect, online_players: &HashSet<String>) {
-        let mut online_players = online_players.iter().cloned().collect::<Vec<_>>();
-        online_players.sort();
+    fn draw<B: Backend>(
+        &self,
+        f: &mut Frame<B>,
+        area: Rect,
+        online_players: &BTreeMap<String, OnlinePlayerInfo>,
+    ) {
         let mut online_players = online_players
-            .iter()
+            .keys()
             .map(|s| ListItem::new(s.as_ref()))
             .collect::<Vec<_>>();
 
