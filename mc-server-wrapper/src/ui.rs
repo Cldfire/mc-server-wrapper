@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 
+use chrono::{Local, TimeZone, Utc};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 use textwrap::Wrapper;
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Span, Spans, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs},
+    style::{Color, Style},
+    text::{Span, Spans},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Row, Table, Tabs},
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
@@ -313,20 +314,49 @@ impl PlayersState {
         area: Rect,
         online_players: &BTreeMap<String, OnlinePlayerInfo>,
     ) {
-        let mut online_players = online_players
-            .keys()
-            .map(|s| ListItem::new(s.as_ref()))
+        let now_utc = Utc::now();
+
+        // TODO: doing all this work every draw for every online player is gonna
+        // be bad with high player counts
+        let online_players = online_players
+            .iter()
+            .map(|(n, info)| {
+                let local_login_time = Local.from_utc_datetime(&info.joined_at.naive_utc());
+
+                let session_time = now_utc - info.joined_at;
+                let (session_minutes, session_hours, session_days) = (
+                    session_time.num_minutes(),
+                    session_time.num_hours(),
+                    session_time.num_days(),
+                );
+                let session_time_string = if session_hours == 0 {
+                    format!("{}m", session_minutes)
+                } else if session_days == 0 {
+                    format!("{}h {}m", session_hours, session_minutes)
+                } else {
+                    format!("{}d {}h {}m", session_days, session_hours, session_minutes)
+                };
+
+                [
+                    n.to_string(),
+                    local_login_time.format("%r").to_string(),
+                    session_time_string,
+                ]
+            })
             .collect::<Vec<_>>();
 
-        if online_players.is_empty() {
-            let style = Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::ITALIC);
-            online_players.push(ListItem::new(Text::styled("No players online", style)))
-        }
+        let online_players = Table::new(
+            ["Name", "Login Time", "Session Length"].iter(),
+            online_players.iter().map(|d| Row::Data(d.iter())),
+        )
+        .block(Block::default().borders(Borders::NONE))
+        .widths(&[
+            Constraint::Length(16),
+            Constraint::Length(11),
+            Constraint::Length(14),
+        ])
+        .column_spacing(3);
 
-        let online_players =
-            List::new(online_players).block(Block::default().borders(Borders::NONE));
         f.render_widget(online_players, area);
     }
 

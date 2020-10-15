@@ -7,6 +7,7 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 ### Added
 
 * The UI now has a "Players" tab to display information about players on the server
+  * Displays a list of online players with login time and session length
 
 ### Changed
 
