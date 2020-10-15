@@ -19,8 +19,6 @@ pub struct TuiState {
     pub tab_state: TabsState,
     pub logs_state: LogsState,
     pub players_state: PlayersState,
-    // TODO: input needs to be scoped to where it is needed
-    pub input_state: InputState,
 }
 
 impl TuiState {
@@ -31,9 +29,9 @@ impl TuiState {
             logs_state: LogsState {
                 records: AllocRingBuffer::with_capacity(512),
                 progress_bar: None,
+                input_state: InputState { value: "".into() },
             },
             players_state: PlayersState,
-            input_state: InputState { value: "".into() },
         }
     }
 
@@ -41,14 +39,7 @@ impl TuiState {
     pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>, online_players: &HashSet<String>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(
-                [
-                    Constraint::Length(2),
-                    Constraint::Min(0),
-                    Constraint::Length(2),
-                ]
-                .as_ref(),
-            )
+            .constraints([Constraint::Length(2), Constraint::Min(0)].as_ref())
             .split(f.size());
 
         self.tab_state.draw(f, chunks[0]);
@@ -59,7 +50,6 @@ impl TuiState {
             1 => self.players_state.draw(f, chunks[1], online_players),
             _ => unreachable!(),
         }
-        self.input_state.draw(f, chunks[2]);
     }
 
     /// Update the state based on the given input
@@ -71,7 +61,6 @@ impl TuiState {
             1 => self.players_state.handle_input(event),
             _ => unreachable!(),
         }
-        self.input_state.handle_input(event);
     }
 }
 
@@ -121,17 +110,23 @@ impl TabsState {
     }
 
     /// Change to the next tab
-    pub fn next(&mut self) {
+    fn next(&mut self) {
         self.current_idx = (self.current_idx + 1) % self.titles.len();
     }
 
     /// Change to the previous tab
-    pub fn previous(&mut self) {
+    fn previous(&mut self) {
         if self.current_idx > 0 {
             self.current_idx -= 1;
         } else {
             self.current_idx = self.titles.len() - 1;
         }
+    }
+
+    /// Get the current tab index
+    // TODO: this being public is a hack
+    pub fn current_idx(&self) -> usize {
+        self.current_idx
     }
 }
 
@@ -175,18 +170,32 @@ pub struct LogsState {
     records: AllocRingBuffer<(String, Option<(Vec<ListItem<'static>>, u16)>)>,
     /// The current state of the active progress bar (if present)
     progress_bar: Option<ProgressBarState>,
+    /// State for the input (child widget)
+    // TODO: this being public is a hack
+    pub input_state: InputState,
 }
 
 impl LogsState {
     /// Draw the current state in the given `area`
     fn draw<B: Backend>(&mut self, f: &mut Frame<B>, area: Rect) {
+        let (input_area, logs_area) = {
+            let mut chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(0), Constraint::Length(2)].as_ref())
+                .split(area);
+            let input_area = chunks.pop().unwrap();
+            let logs_area = chunks.pop().unwrap();
+
+            (input_area, logs_area)
+        };
+
         let available_lines = if self.progress_bar.is_some() {
             // Account for space needed for progress bar
-            area.height as usize - 1
+            logs_area.height as usize - 1
         } else {
-            area.height as usize
+            logs_area.height as usize
         };
-        let area_width = area.width as usize;
+        let logs_area_width = logs_area.width as usize;
 
         let bar_string = if let Some(bar) = &self.progress_bar {
             bar.to_string()
@@ -194,13 +203,13 @@ impl LogsState {
             String::new()
         };
 
-        let wrapper = Wrapper::new(area_width);
+        let wrapper = Wrapper::new(logs_area_width);
         let num_records = self.records.len();
         // Keep track of the number of lines after wrapping so we can skip lines as
         // needed below
         let mut wrapped_lines_len = 0;
 
-        let mut items = Vec::with_capacity(area.height as usize);
+        let mut items = Vec::with_capacity(logs_area.height as usize);
         items.extend(
             self.records
                 .iter_mut()
@@ -209,7 +218,7 @@ impl LogsState {
                 .map(|r| {
                     // See if we can use a cached wrapped line
                     if let Some(wrapped) = &r.1 {
-                        if wrapped.1 as usize == area_width {
+                        if wrapped.1 as usize == logs_area_width {
                             wrapped_lines_len += wrapped.0.len();
                             return wrapped.0.clone();
                         }
@@ -224,7 +233,7 @@ impl LogsState {
                             .map(Span::from)
                             .map(ListItem::new)
                             .collect::<Vec<ListItem>>(),
-                        area.width,
+                        logs_area.width,
                     ));
 
                     wrapped_lines_len += r.1.as_ref().unwrap().0.len();
@@ -250,11 +259,15 @@ impl LogsState {
                 .collect::<Vec<_>>(),
         )
         .block(Block::default().borders(Borders::NONE));
-        f.render_widget(logs, area);
+
+        f.render_widget(logs, logs_area);
+        self.input_state.draw(f, input_area);
     }
 
     /// Update the state based on the given input
-    fn handle_input(&mut self, _event: Event) {}
+    fn handle_input(&mut self, event: Event) {
+        self.input_state.handle_input(event);
+    }
 
     /// Add a record to be displayed
     pub fn add_record(&mut self, record: String) {

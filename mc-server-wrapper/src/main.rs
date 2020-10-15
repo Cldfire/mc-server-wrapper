@@ -316,13 +316,13 @@ async fn main() -> anyhow::Result<()> {
                     Some(Ok(event)) => {
                         if let Event::Key(key_event) = event {
                             match key_event.code {
-                                KeyCode::Enter => {
+                                KeyCode::Enter => if tui_state.tab_state.current_idx() == 0 {
                                     if mc_server.running().await {
-                                        mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.input_state.value().to_string())).await.unwrap();
+                                        mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.logs_state.input_state.value().to_string())).await.unwrap();
                                     } else {
                                         // TODO: create a command parser for user input?
                                         // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe
-                                        match tui_state.input_state.value() {
+                                        match tui_state.logs_state.input_state.value() {
                                             "start" => {
                                                 info!("Starting the Minecraft server");
                                                 mc_cmd_sender.send(ServerCommand::StartServer { config: None }).await.unwrap();
@@ -335,7 +335,7 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                     }
 
-                                    tui_state.input_state.clear();
+                                    tui_state.logs_state.input_state.clear();
                                 },
                                 _ => {}
                             }
