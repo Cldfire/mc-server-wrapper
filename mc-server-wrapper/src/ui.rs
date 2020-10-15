@@ -63,25 +63,15 @@ impl TuiState {
     }
 
     /// Update the state based on the given input
-    // TODO: have handle_input for each state struct, scope it
+    // TODO: make input dispatch more generic
     pub fn handle_input(&mut self, event: Event) {
-        if let Event::Key(key_event) = event {
-            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                match key_event.code {
-                    KeyCode::Right => self.tab_state.next(),
-                    KeyCode::Left => self.tab_state.previous(),
-                    _ => {}
-                }
-            } else {
-                match key_event.code {
-                    KeyCode::Char(c) => self.input_state.value.push(c),
-                    KeyCode::Backspace => {
-                        self.input_state.value.pop();
-                    }
-                    _ => {}
-                }
-            }
+        self.tab_state.handle_input(event);
+        match self.tab_state.current_idx {
+            0 => self.logs_state.handle_input(event),
+            1 => self.players_state.handle_input(event),
+            _ => unreachable!(),
         }
+        self.input_state.handle_input(event);
     }
 }
 
@@ -94,6 +84,13 @@ pub struct TabsState {
 }
 
 impl TabsState {
+    fn new(titles: Vec<String>) -> Self {
+        Self {
+            titles,
+            current_idx: 0,
+        }
+    }
+
     /// Draw the current state in the given `area`
     fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect) {
         let tabs = Tabs::new(
@@ -110,10 +107,16 @@ impl TabsState {
         f.render_widget(tabs, area);
     }
 
-    fn new(titles: Vec<String>) -> Self {
-        Self {
-            titles,
-            current_idx: 0,
+    /// Update the state based on the given input
+    fn handle_input(&mut self, event: Event) {
+        if let Event::Key(key_event) = event {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                match key_event.code {
+                    KeyCode::Right => self.next(),
+                    KeyCode::Left => self.previous(),
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -250,6 +253,9 @@ impl LogsState {
         f.render_widget(logs, area);
     }
 
+    /// Update the state based on the given input
+    fn handle_input(&mut self, _event: Event) {}
+
     /// Add a record to be displayed
     pub fn add_record(&mut self, record: String) {
         self.records.push((record, None));
@@ -301,6 +307,9 @@ impl PlayersState {
             List::new(online_players).block(Block::default().borders(Borders::NONE));
         f.render_widget(online_players, area);
     }
+
+    /// Update the state based on the given input
+    fn handle_input(&mut self, _event: Event) {}
 }
 
 #[derive(Debug)]
@@ -321,6 +330,19 @@ impl InputState {
 
         f.render_widget(input, area);
         f.set_cursor(value_width + 2, area.y);
+    }
+
+    /// Update the state based on the given input
+    fn handle_input(&mut self, event: Event) {
+        if let Event::Key(key_event) = event {
+            match key_event.code {
+                KeyCode::Char(c) => self.value.push(c),
+                KeyCode::Backspace => {
+                    self.value.pop();
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Clear the input
