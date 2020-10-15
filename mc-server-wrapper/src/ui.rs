@@ -1,11 +1,13 @@
-use crossterm::event::{Event, KeyCode};
+use std::collections::HashSet;
+
+use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 use textwrap::Wrapper;
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
-    text::{Span, Spans},
+    style::{Color, Modifier, Style},
+    text::{Span, Spans, Text},
     widgets::{Block, Borders, List, ListItem, Paragraph, Tabs},
     Frame,
 };
@@ -16,23 +18,27 @@ use unicode_width::UnicodeWidthStr;
 pub struct TuiState {
     pub tab_state: TabsState,
     pub logs_state: LogsState,
+    pub players_state: PlayersState,
+    // TODO: input needs to be scoped to where it is needed
     pub input_state: InputState,
 }
 
 impl TuiState {
     pub fn new() -> Self {
         TuiState {
-            tab_state: TabsState::new(vec!["Logs".into()]),
+            // TODO: don't hardcode this
+            tab_state: TabsState::new(vec!["Logs".into(), "Players".into()]),
             logs_state: LogsState {
                 records: AllocRingBuffer::with_capacity(512),
                 progress_bar: None,
             },
+            players_state: PlayersState,
             input_state: InputState { value: "".into() },
         }
     }
 
     /// Draw the current state to the given frame
-    pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>) {
+    pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>, online_players: &HashSet<String>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
@@ -46,20 +52,34 @@ impl TuiState {
             .split(f.size());
 
         self.tab_state.draw(f, chunks[0]);
-        self.logs_state.draw(f, chunks[1]);
+        // TODO: create tab structs that report what index they belong at so this
+        // isn't hardcoded
+        match self.tab_state.current_idx {
+            0 => self.logs_state.draw(f, chunks[1]),
+            1 => self.players_state.draw(f, chunks[1], online_players),
+            _ => unreachable!(),
+        }
         self.input_state.draw(f, chunks[2]);
     }
 
     /// Update the state based on the given input
-    // TODO: have handle_input for each state struct?
+    // TODO: have handle_input for each state struct, scope it
     pub fn handle_input(&mut self, event: Event) {
         if let Event::Key(key_event) = event {
-            match key_event.code {
-                KeyCode::Char(c) => self.input_state.value.push(c),
-                KeyCode::Backspace => {
-                    self.input_state.value.pop();
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                match key_event.code {
+                    KeyCode::Right => self.tab_state.next(),
+                    KeyCode::Left => self.tab_state.previous(),
+                    _ => {}
                 }
-                _ => {}
+            } else {
+                match key_event.code {
+                    KeyCode::Char(c) => self.input_state.value.push(c),
+                    KeyCode::Backspace => {
+                        self.input_state.value.pop();
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -97,19 +117,19 @@ impl TabsState {
         }
     }
 
-    // /// Change to the next tab
-    // pub fn next(&mut self) {
-    //     self.current_idx = (self.current_idx + 1) % self.titles.len();
-    // }
+    /// Change to the next tab
+    pub fn next(&mut self) {
+        self.current_idx = (self.current_idx + 1) % self.titles.len();
+    }
 
-    // /// Change to the previous tab
-    // pub fn previous(&mut self) {
-    //     if self.current_idx > 0 {
-    //         self.current_idx -= 1;
-    //     } else {
-    //         self.current_idx = self.titles.len() - 1;
-    //     }
-    // }
+    /// Change to the previous tab
+    pub fn previous(&mut self) {
+        if self.current_idx > 0 {
+            self.current_idx -= 1;
+        } else {
+            self.current_idx = self.titles.len() - 1;
+        }
+    }
 }
 
 /// A simple struct to represent the state of a progress bar
@@ -254,6 +274,32 @@ impl LogsState {
                 })
             }
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct PlayersState;
+
+impl PlayersState {
+    /// Draw the current state in the given `area`
+    fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect, online_players: &HashSet<String>) {
+        let mut online_players = online_players.iter().cloned().collect::<Vec<_>>();
+        online_players.sort();
+        let mut online_players = online_players
+            .iter()
+            .map(|s| ListItem::new(s.as_ref()))
+            .collect::<Vec<_>>();
+
+        if online_players.is_empty() {
+            let style = Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC);
+            online_players.push(ListItem::new(Text::styled("No players online", style)))
+        }
+
+        let online_players =
+            List::new(online_players).block(Block::default().borders(Borders::NONE));
+        f.render_widget(online_players, area);
     }
 }
 

@@ -150,8 +150,11 @@ async fn main() -> anyhow::Result<()> {
             tui_state.logs_state.add_record(record);
         }
 
-        // TODO: figure out what to do if the terminal fails to draw
-        let _ = terminal.draw(|mut f| tui_state.draw(&mut f));
+        {
+            let online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
+            // TODO: figure out what to do if the terminal fails to draw
+            let _ = terminal.draw(|mut f| tui_state.draw(&mut f, &online_players));
+        }
 
         tokio::select! {
             e = mc_event_receiver.next() => if let Some(e) = e {

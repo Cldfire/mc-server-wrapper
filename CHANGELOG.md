@@ -4,6 +4,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+* The UI now has a "Players" tab to display information about players on the server
+
 ### Changed
 
 * We no longer attempt to fetch missing member info via Discord's HTTP API if it is not present in the cache ([explanation](https://github.com/twilight-rs/twilight/pull/437))
