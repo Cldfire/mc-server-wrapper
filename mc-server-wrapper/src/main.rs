@@ -332,6 +332,7 @@ async fn main() -> anyhow::Result<()> {
                 match maybe_term_event {
                     Some(Ok(event)) => {
                         if let Event::Key(key_event) = event {
+                            #[allow(clippy::single_match)]
                             match key_event.code {
                                 KeyCode::Enter => if tui_state.tab_state.current_idx() == 0 {
                                     if mc_server.running().await {

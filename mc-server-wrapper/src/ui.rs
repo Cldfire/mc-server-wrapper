@@ -166,6 +166,7 @@ impl Display for ProgressBarState {
 }
 
 #[derive(Debug)]
+#[allow(clippy::type_complexity)]
 pub struct LogsState {
     /// Stores the log messages to be displayed
     ///

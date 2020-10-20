@@ -50,6 +50,8 @@ pub fn activity(name: String) -> Activity {
 ///
 /// The given `cache` is used to get data to replace channel and role mention
 /// names with
+// The collect here is not needless
+#[allow(clippy::needless_collect)]
 pub fn format_mentions_in<S: AsRef<str>>(
     content: S,
     mentions: HashMap<UserId, &str>,

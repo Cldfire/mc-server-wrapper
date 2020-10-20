@@ -217,6 +217,7 @@ impl DiscordBridge {
     ///
     /// The provided `cmd_parser` is used to parse commands (not
     /// `ServerCommands`) from Discord messages.
+    #[allow(clippy::single_match)]
     pub async fn handle_discord_event<'a>(
         &self,
         event: (u64, Event),
