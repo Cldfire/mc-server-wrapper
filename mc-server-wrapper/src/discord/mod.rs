@@ -112,10 +112,12 @@ impl DiscordBridge {
         allow_status_updates: bool,
     ) -> anyhow::Result<Self> {
         let client = DiscordClient::new(&token);
-        let cluster = Cluster::builder(&token)
-            .intents(Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::GUILD_MEMBERS)
-            .build()
-            .await?;
+        let cluster = Cluster::builder(
+            &token,
+            Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::GUILD_MEMBERS,
+        )
+        .build()
+        .await?;
 
         let cluster_spawn = cluster.clone();
         tokio::spawn(async move {
@@ -536,8 +538,8 @@ impl DiscordBridge {
                     if let Some(shard) = inner.cluster.shard(*shard_id) {
                         match shard
                             .command(&UpdateStatus::new(
+                                vec![activity(text.clone())],
                                 false,
-                                activity(text.clone()),
                                 None,
                                 Status::Online,
                             ))

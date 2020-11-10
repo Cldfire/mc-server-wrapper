@@ -21,7 +21,7 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ### Internal
 
-* Updated to `twilight` 0.1 release from crates.io
+* Updated to `twilight` 0.2 release from crates.io
 * Replaced custom mention parsing code with the new `twilight-mention` support for parsing mentions from Discord messages
 * Updated workflows
   * Clippy job now denies warnings
