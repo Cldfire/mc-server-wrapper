@@ -3,7 +3,6 @@ use std::{collections::BTreeMap, fmt::Display};
 use chrono::{Local, TimeZone, Utc};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
-use textwrap::Wrapper;
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -207,7 +206,6 @@ impl LogsState {
             String::new()
         };
 
-        let wrapper = Wrapper::new(logs_area_width);
         let num_records = self.records.len();
         // Keep track of the number of lines after wrapping so we can skip lines as
         // needed below
@@ -230,8 +228,7 @@ impl LogsState {
 
                     // If not, wrap the line and cache it
                     r.1 = Some((
-                        wrapper
-                            .wrap(r.0.as_ref())
+                        textwrap::wrap(r.0.as_ref(), logs_area_width)
                             .into_iter()
                             .map(|s| s.to_string())
                             .map(Span::from)
