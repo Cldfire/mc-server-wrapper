@@ -2,12 +2,15 @@ use std::{collections::BTreeMap, fmt::Display};
 
 use chrono::{Local, TimeZone, Utc};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
+use mc_legacy_formatting::{
+    Color as McColor, Span as McSpan, SpanExt as McSpanExt, Styles as McStyles,
+};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 use textwrap::Wrapper;
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Span, Spans},
     widgets::{Block, Borders, List, ListItem, Paragraph, Row, Table, Tabs},
     Frame,
@@ -22,19 +25,23 @@ pub struct TuiState {
     pub tab_state: TabsState,
     pub logs_state: LogsState,
     pub players_state: PlayersState,
+    pub motd_state: MotdState,
 }
 
 impl TuiState {
     pub fn new() -> Self {
         TuiState {
             // TODO: don't hardcode this
-            tab_state: TabsState::new(vec!["Logs".into(), "Players".into()]),
+            tab_state: TabsState::new(vec!["Logs".into(), "Players".into(), "MOTD".into()]),
             logs_state: LogsState {
                 records: AllocRingBuffer::with_capacity(512),
                 progress_bar: None,
                 input_state: InputState { value: "".into() },
             },
             players_state: PlayersState,
+            motd_state: MotdState {
+                input_state: InputState { value: "".into() },
+            },
         }
     }
 
@@ -55,6 +62,7 @@ impl TuiState {
         match self.tab_state.current_idx {
             0 => self.logs_state.draw(f, chunks[1]),
             1 => self.players_state.draw(f, chunks[1], online_players),
+            2 => self.motd_state.draw(f, chunks[1]),
             _ => unreachable!(),
         }
     }
@@ -66,6 +74,7 @@ impl TuiState {
         match self.tab_state.current_idx {
             0 => self.logs_state.handle_input(event),
             1 => self.players_state.handle_input(event),
+            2 => self.motd_state.handle_input(event),
             _ => unreachable!(),
         }
     }
@@ -403,6 +412,120 @@ impl InputState {
     pub fn value(&self) -> &str {
         &self.value
     }
+}
+
+#[derive(Debug)]
+pub struct MotdState {
+    /// State for the input (child widget)
+    // TODO: this being public is a hack
+    pub input_state: InputState,
+}
+
+impl MotdState {
+    /// Draw the current state in the given `area`
+    fn draw<B: Backend>(&mut self, f: &mut Frame<B>, area: Rect) {
+        let (input_area, motd_area) = {
+            let mut chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                .split(area);
+            let input_area = chunks.pop().unwrap();
+            let motd_area = chunks.pop().unwrap();
+
+            (input_area, motd_area)
+        };
+
+        let value = self.input_state.value();
+
+        let spans = Spans::from(
+            value
+                .span_iter()
+                .with_start_char('&')
+                .map(to_tui_span)
+                .collect::<Vec<_>>(),
+        );
+
+        let motd = Paragraph::new(spans)
+            .style(Style::default())
+            .block(Block::default());
+
+        f.render_widget(motd, motd_area);
+        self.input_state.draw(f, input_area);
+    }
+
+    /// Update the state based on the given input
+    fn handle_input(&mut self, event: Event) {
+        self.input_state.handle_input(event);
+    }
+}
+
+fn to_tui_span(from: McSpan) -> Span {
+    match from {
+        McSpan::Styled {
+            text,
+            color,
+            styles,
+        } => Span::styled(
+            text,
+            Style::default()
+                .fg(to_tui_color(color))
+                .add_modifier(to_tui_modifier(styles)),
+        ),
+        McSpan::StrikethroughWhitespace {
+            text,
+            color,
+            styles,
+        } => Span::styled(
+            text,
+            Style::default()
+                .fg(to_tui_color(color))
+                .add_modifier(to_tui_modifier(styles)),
+        ),
+        McSpan::Plain(text) => Span::raw(text),
+    }
+}
+
+fn to_tui_color(from: McColor) -> Color {
+    match from {
+        McColor::Black => Color::Black,
+        McColor::DarkBlue => Color::Blue,
+        McColor::DarkGreen => Color::Green,
+        McColor::DarkAqua => Color::Cyan,
+        McColor::DarkRed => Color::Red,
+        McColor::DarkPurple => Color::Magenta,
+        McColor::Gold => Color::Yellow,
+        McColor::Gray => Color::Gray,
+        McColor::DarkGray => Color::DarkGray,
+        McColor::Blue => Color::LightBlue,
+        McColor::Green => Color::LightGreen,
+        McColor::Aqua => Color::LightCyan,
+        McColor::Red => Color::LightRed,
+        McColor::LightPurple => Color::LightMagenta,
+        McColor::Yellow => Color::LightYellow,
+        McColor::White => Color::White,
+    }
+}
+
+fn to_tui_modifier(from: McStyles) -> Modifier {
+    let mut modifiers = Modifier::empty();
+
+    if from.contains(McStyles::BOLD) {
+        modifiers.set(Modifier::BOLD, true);
+    }
+
+    if from.contains(McStyles::STRIKETHROUGH) {
+        modifiers.set(Modifier::CROSSED_OUT, true);
+    }
+
+    if from.contains(McStyles::UNDERLINED) {
+        modifiers.set(Modifier::UNDERLINED, true);
+    }
+
+    if from.contains(McStyles::ITALIC) {
+        modifiers.set(Modifier::ITALIC, true);
+    }
+
+    modifiers
 }
 
 #[cfg(test)]

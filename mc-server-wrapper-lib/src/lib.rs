@@ -1,5 +1,5 @@
 use tokio::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::BufReader,
     prelude::*,
     process,
@@ -8,6 +8,8 @@ use tokio::{
 };
 
 use thiserror::Error;
+
+// use std::io::Write as StdWrite;
 
 use once_cell::sync::OnceCell;
 
@@ -167,6 +169,27 @@ impl McServerManager {
                         let _ = self.write_to_stdin(text).await;
                     }
 
+                    SetServerProperty { key, value } => {
+                        let mut event_sender_clone = event_sender.clone();
+
+                        if let Some(config) = &current_config {
+                            let server_path = config.server_path.clone();
+                            tokio::spawn(async move {
+                                event_sender_clone
+                                    .send(SetServerPropertyResult(
+                                        McServerManager::set_property_value(
+                                            server_path,
+                                            key,
+                                            value,
+                                        )
+                                        .await,
+                                    ))
+                                    .await
+                                    .unwrap();
+                            });
+                        }
+                    }
+
                     AgreeToEula => {
                         let mut event_sender_clone = event_sender.clone();
 
@@ -277,6 +300,26 @@ impl McServerManager {
         let mut file = File::create(server_path.as_ref().with_file_name("eula.txt")).await?;
 
         file.write_all(b"eula=true").await
+    }
+
+    /// Set a key to a value in the `server.properties` file
+    // TODO: preserve comments and ordering of keys
+    // TODO: add a way to set multiple keys at once
+    async fn set_property_value<P: AsRef<Path>>(
+        server_path: P,
+        key: String,
+        value: String,
+    ) -> io::Result<()> {
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .truncate(true)
+            .open(server_path.as_ref().with_file_name("server.properties"))
+            .await?;
+
+        // I tried using the `java-properties` crate but... it forcibly escapes all
+        // spaces with backslashes?? why??
+        todo!("actually set the property value")
     }
 }
 

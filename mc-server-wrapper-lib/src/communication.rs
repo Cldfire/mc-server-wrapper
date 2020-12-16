@@ -31,6 +31,8 @@ pub enum ServerEvent {
 
     /// Response to `AgreeToEula`
     AgreeToEulaResult(io::Result<()>),
+    /// Response to `SetServerProperty`
+    SetServerPropertyResult(io::Result<()>),
     /// Response to `StartServer`
     StartServerResult(Result<(), McServerStartError>),
 }
@@ -52,6 +54,11 @@ pub enum ServerCommand {
     WriteCommandToStdin(String),
     /// Write the given string verbatim to stdin
     WriteToStdin(String),
+
+    /// Set the given key to the given value in the `server.properties` file
+    ///
+    /// This currently only supports setting the `motd` key for Reasons.
+    SetServerProperty { key: String, value: String },
 
     /// Agree to the EULA (required to run the server)
     AgreeToEula,

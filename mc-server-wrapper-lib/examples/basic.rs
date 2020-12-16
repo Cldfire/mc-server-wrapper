@@ -90,6 +90,7 @@ async fn main() {
                         .unwrap();
                 }
             }
+            ServerEvent::SetServerPropertyResult { .. } => {}
             ServerEvent::StartServerResult(res) => {
                 if let Err(e) = res {
                     eprintln!("Failed to start the Minecraft server: {}", e);

@@ -313,6 +313,11 @@ async fn main() -> anyhow::Result<()> {
                             last_start_time = Instant::now();
                         }
                     }
+                    ServerEvent::SetServerPropertyResult(res) => {
+                        if let Err(e) = res {
+                            error!("Failed to set server property: {:?}", e);
+                        }
+                    }
                     ServerEvent::StartServerResult(res) => {
                         // TODO: it's impossible to read start failures right now because the TUI
                         // leaves the alternate screen right away and the logs are gone
@@ -335,6 +340,7 @@ async fn main() -> anyhow::Result<()> {
                             #[allow(clippy::single_match)]
                             match key_event.code {
                                 KeyCode::Enter => if tui_state.tab_state.current_idx() == 0 {
+                                    // We've pressed enter on the logs tab
                                     if mc_server.running().await {
                                         mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.logs_state.input_state.value().to_string())).await.unwrap();
                                     } else {
@@ -354,6 +360,10 @@ async fn main() -> anyhow::Result<()> {
                                     }
 
                                     tui_state.logs_state.input_state.clear();
+                                } else if tui_state.tab_state.current_idx() == 2 {
+                                    // We've pressed enter on the MOTD tab
+                                    mc_cmd_sender.send(ServerCommand::SetServerProperty{ key: "motd".into(), value: tui_state.motd_state.input_state.value().to_string() }).await.unwrap();
+                                    tui_state.motd_state.input_state.clear();
                                 },
                                 _ => {}
                             }
