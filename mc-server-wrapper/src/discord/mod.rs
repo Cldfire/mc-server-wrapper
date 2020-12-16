@@ -323,6 +323,7 @@ impl DiscordBridge {
     ) {
         for attachment in &msg.attachments {
             let type_str = if attachment.height.is_some() {
+                // TODO: it could also be a video....
                 "image"
             } else {
                 "file"
@@ -404,17 +405,26 @@ impl DiscordBridge {
         );
 
         let tellraw_msg = tellraw_prefix()
-            .then(Payload::text(&format!(
-                "<{}> {}",
-                author_display_name, &content
-            )))
+            .then(Payload::text(&format!("<{}>", author_display_name)))
+            .hover_show_text(&format!(
+                "{}#{}",
+                &msg.author.name, &msg.author.discriminator
+            ))
+            .then(Payload::text(&format!(" {}", content)))
             .build();
 
         // Tellraw commands do not get logged to the console, so we
         // make up for that here
         ConsoleMsg::new(
             ConsoleMsgType::Info,
-            format!("{}<{}> {}", CHAT_PREFIX, author_display_name, &content),
+            format!(
+                "{}<{} ({}#{})> {}",
+                CHAT_PREFIX,
+                author_display_name,
+                &msg.author.name,
+                &msg.author.discriminator,
+                &content
+            ),
         )
         .log();
 
