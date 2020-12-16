@@ -1,6 +1,7 @@
 # mc-server-wrapper
 
 ![CI](https://github.com/Cldfire/mc-server-wrapper/workflows/CI/badge.svg)
+[![dependency status](https://deps.rs/repo/github/cldfire/mc-server-wrapper/status.svg)](https://deps.rs/repo/github/cldfire/mc-server-wrapper)
 
 Lightweight Rust program to manage a Java Minecraft server process (vanilla, Spigot, or PaperSpigot), providing niceties such as a Discord chat bridge, server restart-on-crash, and improved console output.
 

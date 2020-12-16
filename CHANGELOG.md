@@ -4,6 +4,8 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+## [alpha3] - 2020-12-15
+
 ### Added
 
 * The UI now has a "Players" tab to display information about players on the server
@@ -23,6 +25,8 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 * Updated to `twilight` 0.2 release from crates.io
 * Replaced custom mention parsing code with the new `twilight-mention` support for parsing mentions from Discord messages
+* Started adjusting the binary's `Cargo.toml` version for each release
+* Added a deps.rs badge to the README
 * Updated workflows
   * Clippy job now denies warnings
   * Daily audit job is now a weekly audit job
@@ -38,6 +42,7 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 Tagging a first alpha release after a few months of working on the project.
 
-[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha2...HEAD
+[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha3...HEAD
+[alpha3]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha2...alpha3
 [alpha2]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha1...alpha2
 [alpha1]: https://github.com/Cldfire/mc-server-wrapper/releases/tag/alpha1
