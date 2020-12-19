@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt::Display};
 
-use chrono::{Local, TimeZone, Utc};
+use chrono::{Duration, Local, TimeZone, Utc};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 use tui::{
@@ -318,18 +318,7 @@ impl PlayersState {
                 let local_login_time = Local.from_utc_datetime(&info.joined_at.naive_utc());
 
                 let session_time = now_utc - info.joined_at;
-                let (session_minutes, session_hours, session_days) = (
-                    session_time.num_minutes(),
-                    session_time.num_hours(),
-                    session_time.num_days(),
-                );
-                let session_time_string = if session_hours == 0 {
-                    format!("{}m", session_minutes)
-                } else if session_days == 0 {
-                    format!("{}h {}m", session_hours, session_minutes)
-                } else {
-                    format!("{}d {}h {}m", session_days, session_hours, session_minutes)
-                };
+                let session_time_string = make_session_time_string(session_time);
 
                 [
                     n.to_string(),
@@ -356,6 +345,22 @@ impl PlayersState {
 
     /// Update the state based on the given input
     fn handle_input(&mut self, _event: Event) {}
+}
+
+fn make_session_time_string(session_duration: Duration) -> String {
+    let (session_minutes, session_hours, session_days) = (
+        (session_duration - Duration::hours(session_duration.num_hours())).num_minutes(),
+        (session_duration - Duration::days(session_duration.num_days())).num_hours(),
+        session_duration.num_days(),
+    );
+
+    if session_hours == 0 {
+        format!("{}m", session_minutes)
+    } else if session_days == 0 {
+        format!("{}h {}m", session_hours, session_minutes)
+    } else {
+        format!("{}d {}h {}m", session_days, session_hours, session_minutes)
+    }
 }
 
 #[derive(Debug)]
@@ -440,6 +445,35 @@ mod test {
                 }
                 .to_string(),
                 "[==========] 100%"
+            );
+        }
+    }
+
+    mod session_time_string {
+        use chrono::Duration;
+
+        use crate::ui::make_session_time_string;
+
+        #[test]
+        fn minutes() {
+            assert_eq!(make_session_time_string(Duration::minutes(23)), "23m");
+        }
+
+        #[test]
+        fn hours() {
+            assert_eq!(
+                make_session_time_string(Duration::hours(2) + Duration::minutes(12)),
+                "2h 12m"
+            );
+        }
+
+        #[test]
+        fn days() {
+            assert_eq!(
+                make_session_time_string(
+                    Duration::days(1) + Duration::hours(2) + Duration::minutes(12)
+                ),
+                "1d 2h 12m"
             );
         }
     }

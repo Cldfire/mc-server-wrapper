@@ -9,6 +9,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 * Hovering over the username part of a Discord message in Minecraft will now reveal the Discord user's account name and discriminator (e.g. Cldfire#3395)
   * This information is now logged as well
 
+### Fixed
+
+* The session times displayed in the "Players" tab are now accurate
+
 ## [alpha3] - 2020-12-15
 
 ### Added
