@@ -5,7 +5,7 @@
 
 Lightweight Rust program to manage a Java Minecraft server process (vanilla, Spigot, or PaperSpigot), providing niceties such as a Discord chat bridge, server restart-on-crash, and improved console output.
 
-Not production-ready, but getting there. Feel free to use it for non-critical servers, and please report issues!
+This has been running over top of a small server of mine 24/7 since March 2020 with zero crashes / major issues of any kind. I'd consider it ready for small-scale production usage.
 
 ## Features
 
