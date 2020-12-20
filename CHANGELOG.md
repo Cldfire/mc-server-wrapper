@@ -17,13 +17,13 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 * `Tab` / `Shift + Tab` are now the shortcuts used to change tabs in the UI
 
-### Internal
-
-* Removed dependency on `ringbuffer` (using `VecDeque` instead)
-
 ### Fixed
 
 * The session times displayed in the "Players" tab are now accurate
+
+### Internal
+
+* Removed dependency on `ringbuffer` (using `VecDeque` instead)
 
 ## [alpha3] - 2020-12-15
 
