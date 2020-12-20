@@ -1,10 +1,13 @@
 use crate::OnlinePlayerInfo;
 
-use super::CHAT_PREFIX;
+use super::{message_span_iter::MessageSpan, CHAT_PREFIX};
 use minecraft_protocol::chat::{Color, MessageBuilder, Payload};
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+};
 use twilight_cache_inmemory::InMemoryCache;
-use twilight_mention::{parse::MentionType, ParseMention};
+use twilight_mention::parse::MentionType;
 use twilight_model::{
     gateway::presence::{Activity, ActivityType},
     id::{RoleId, UserId},
@@ -42,58 +45,104 @@ pub fn activity(name: String) -> Activity {
     }
 }
 
-/// Formats mentions in the given content using the given info
+/// Formats mentions in the given content using the given info.
 ///
 /// `mentions` maps mentioned user IDs to their names. It is your responsibility
 /// to handle nicknames and pass them in appropriately if that's something you
 /// care about.
 ///
 /// The given `cache` is used to get data to replace channel and role mention
-/// names with
-// The collect here is not needless
-#[allow(clippy::needless_collect)]
+/// names with.
+///
+/// The given `message_builder` is used to build up a Minecraft chat object with
+/// well-formatted text.
+///
+/// Returns (formatted_string, modified_chat_object_builder)
 pub fn format_mentions_in<S: AsRef<str>>(
     content: S,
+    mut message_builder: MessageBuilder,
     mentions: HashMap<UserId, &str>,
     mention_roles: &[RoleId],
     cache: InMemoryCache,
-) -> String {
-    let mut output = content.as_ref().to_owned();
-    let parsed_mentions = MentionType::iter(content.as_ref()).collect::<Vec<_>>();
+) -> (String, MessageBuilder) {
+    // TODO: write a mc chat object crate to clean this code up
+    let mut cows = vec![];
 
-    for (mention_type, start, end) in parsed_mentions.into_iter().rev() {
-        match mention_type {
-            MentionType::Channel(id) => {
-                if let Some(channel) = cache.guild_channel(id) {
-                    output.replace_range(start..=end, &format!("#{}", channel.name()));
-                }
+    for span in MessageSpan::iter(content.as_ref()) {
+        // Map each span into well-formatted text, both for Minecraft and anything
+        // else (like the TUI logs)
+        match span {
+            MessageSpan::Text(text) => {
+                message_builder = message_builder.then(Payload::text(text));
+                cows.push(Cow::from(text));
             }
-            MentionType::Emoji(id) => {
-                if let Some(emoji) = cache.emoji(id) {
-                    output.replace_range(start..=end, &format!(":{}:", &emoji.name));
+            MessageSpan::Mention((mention_type, raw)) => match mention_type {
+                MentionType::Channel(id) => {
+                    let cow = cache
+                        .guild_channel(id)
+                        .map(|channel| Cow::from(format!("#{}", channel.name())))
+                        // Throughout this function we fallback to the raw, unformatted
+                        // text if we're unable to fetch relevant info from the cache
+                        .unwrap_or(Cow::from(raw));
+
+                    message_builder = message_builder
+                        .then(Payload::text(cow.as_ref()))
+                        .color(Color::Blue);
+                    cows.push(cow);
                 }
-            }
-            MentionType::Role(RoleId(id)) => {
-                if let Some(role_id) = mention_roles.iter().find(|r| id == r.0) {
-                    if let Some(role) = cache.role(*role_id) {
-                        output.replace_range(start..=end, &format!("@{}", &role.name));
+                MentionType::Emoji(id) => {
+                    // Non-custom emoji don't fall under this branch, but it would be
+                    // annoying and non-performant to parse those out and replace them
+                    // with :names:
+                    let cow = cache
+                        .emoji(id)
+                        .map(|emoji| Cow::from(format!(":{}:", &emoji.name)))
+                        .unwrap_or(Cow::from(raw));
+
+                    message_builder = message_builder.then(Payload::text(cow.as_ref()));
+                    cows.push(cow);
+                }
+                MentionType::Role(RoleId(id)) => {
+                    let cow = mention_roles
+                        .iter()
+                        .find(|r| id == r.0)
+                        .and_then(|role_id| cache.role(*role_id))
+                        .map(|role| Cow::from(format!("@{}", &role.name)))
+                        .unwrap_or(Cow::from(raw));
+
+                    message_builder = message_builder
+                        .then(Payload::text(cow.as_ref()))
+                        .color(Color::Blue);
+                    cows.push(cow)
+                }
+                MentionType::User(id) => {
+                    let cow = mentions
+                        .get(&id)
+                        .map(|name| Cow::from(format!("@{}", name)))
+                        .unwrap_or(Cow::from(raw));
+
+                    message_builder = message_builder
+                        .then(Payload::text(cow.as_ref()))
+                        .color(Color::Blue);
+
+                    if let Some(cached_user) = cache.user(id) {
+                        message_builder = message_builder.hover_show_text(&format!(
+                            "{}#{}",
+                            &cached_user.name, &cached_user.discriminator
+                        ));
                     }
+
+                    cows.push(cow);
                 }
-            }
-            MentionType::User(UserId(id)) => {
-                if let Some(name) = mentions
-                    .iter()
-                    .find(|(user_id, _)| id == user_id.0)
-                    .map(|(_, name)| name)
-                {
-                    output.replace_range(start..=end, &format!("@{}", name));
+                _ => {
+                    message_builder = message_builder.then(Payload::text(raw));
+                    cows.push(Cow::from(raw));
                 }
-            }
-            _ => {}
+            },
         }
     }
 
-    output
+    (cows.into_iter().collect(), message_builder)
 }
 
 /// Different formats online player data can be turned into
@@ -263,6 +312,7 @@ mod test {
 
     mod content_format_mentions {
         use super::super::format_mentions_in;
+        use minecraft_protocol::chat::{MessageBuilder, Payload};
         use std::collections::HashMap;
         use twilight_cache_inmemory::InMemoryCache;
         use twilight_model::{
@@ -310,7 +360,13 @@ mod test {
         #[test]
         fn blank_message() {
             let msg = "";
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                InMemoryCache::new(),
+            );
 
             assert_eq!(formatted, "");
         }
@@ -318,7 +374,13 @@ mod test {
         #[test]
         fn fake_mention() {
             let msg = "the upcoming bracket <@thing is not a mention";
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                InMemoryCache::new(),
+            );
 
             assert_eq!(formatted, msg);
         }
@@ -326,7 +388,13 @@ mod test {
         #[test]
         fn closing_bracket_then_start_mention() {
             let msg = "><@!kksdk";
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                InMemoryCache::new(),
+            );
 
             assert_eq!(formatted, msg);
         }
@@ -334,7 +402,13 @@ mod test {
         #[test]
         fn fake_mention_crazy() {
             let msg = "<<><><@!><#><>#<>>>>";
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                InMemoryCache::new(),
+            );
 
             assert_eq!(formatted, msg);
         }
@@ -342,7 +416,13 @@ mod test {
         #[test]
         fn fake_mention_bad_id() {
             let msg = "<@!12notanumber>";
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                InMemoryCache::new(),
+            );
 
             assert_eq!(formatted, msg);
         }
@@ -350,7 +430,13 @@ mod test {
         #[test]
         fn one_mention_no_info() {
             let msg = "this has a mention: <@123>, but we're not passing mentions";
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                InMemoryCache::new(),
+            );
 
             assert_eq!(formatted, msg);
         }
@@ -361,7 +447,13 @@ mod test {
             let mut mentions = HashMap::new();
             mentions.insert(UserId(123), "TestName");
 
-            let formatted = format_mentions_in(msg, mentions, &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                mentions,
+                &[],
+                InMemoryCache::new(),
+            );
             assert_eq!(
                 formatted,
                 "this has a mention: @TestName, and we are passing mentions"
@@ -375,7 +467,13 @@ mod test {
             mentions.insert(UserId(123), "TestName");
             mentions.insert(UserId(321), "AnotherTest");
 
-            let formatted = format_mentions_in(msg, mentions, &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                mentions,
+                &[],
+                InMemoryCache::new(),
+            );
             assert_eq!(formatted, "@TestName, and even @AnotherTest!");
         }
 
@@ -386,7 +484,13 @@ mod test {
             mentions.insert(UserId(123), "TestName");
             mentions.insert(UserId(3234), "WowTest");
 
-            let formatted = format_mentions_in(msg, mentions, &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                mentions,
+                &[],
+                InMemoryCache::new(),
+            );
             assert_eq!(formatted, "@TestName, and even <@!321>, and wow: @WowTest");
         }
 
@@ -394,7 +498,13 @@ mod test {
         fn channel_mention_no_info() {
             let msg = "this is a channel mention: <#1234>";
 
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                InMemoryCache::new(),
+            );
             assert_eq!(formatted, msg);
         }
 
@@ -405,7 +515,13 @@ mod test {
             let cache = InMemoryCache::new();
             cache.update(&make_text_channel());
 
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], cache);
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                cache,
+            );
             assert_eq!(formatted, "this is a channel mention: #test-channel");
         }
 
@@ -416,7 +532,13 @@ mod test {
             let cache = InMemoryCache::new();
             cache.update(&make_text_channel());
 
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], cache);
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                cache,
+            );
             assert_eq!(
                 formatted,
                 "<@1234> <#245> this is a channel mention: #test-channel"
@@ -427,7 +549,13 @@ mod test {
         fn role_mention_no_info() {
             let msg = "this is a role mention: <@&2345>";
 
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], InMemoryCache::new());
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                InMemoryCache::new(),
+            );
             assert_eq!(formatted, "this is a role mention: <@&2345>");
         }
 
@@ -438,7 +566,13 @@ mod test {
             let cache = InMemoryCache::new();
             cache.update(&make_role());
 
-            let formatted = format_mentions_in(msg, HashMap::new(), &[], cache);
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[],
+                cache,
+            );
             assert_eq!(formatted, msg);
         }
 
@@ -449,7 +583,13 @@ mod test {
             let cache = InMemoryCache::new();
             cache.update(&make_role());
 
-            let formatted = format_mentions_in(msg, HashMap::new(), &[RoleId(2345)], cache);
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                HashMap::new(),
+                &[RoleId(2345)],
+                cache,
+            );
             assert_eq!(formatted, "this is a role mention: @test-role");
         }
 
@@ -464,7 +604,13 @@ mod test {
             cache.update(&make_role());
             cache.update(&make_text_channel());
 
-            let formatted = format_mentions_in(msg, mentions, &[RoleId(2345)], cache);
+            let (formatted, _) = format_mentions_in(
+                msg,
+                MessageBuilder::builder(Payload::text("")),
+                mentions,
+                &[RoleId(2345)],
+                cache,
+            );
             assert_eq!(
                 formatted,
                 "@TestName this channel (#test-channel) is pretty cool for the role @test-role!"

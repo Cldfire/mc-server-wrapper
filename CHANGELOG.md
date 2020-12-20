@@ -6,7 +6,9 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ### Added
 
+* Mentions within Discord are now formatted with a blue color in Minecraft (similar to how they look in the Discord client)
 * Hovering over the username part of a Discord message in Minecraft will now reveal the Discord user's account name and discriminator (e.g. Cldfire#3395)
+  * Also displayed when hovering over user mentions
   * This information is now logged as well
 
 ### Fixed

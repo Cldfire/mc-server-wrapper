@@ -28,6 +28,7 @@ use futures::future;
 use std::{collections::HashMap, sync::Arc};
 use tokio::{stream::StreamExt, sync::mpsc::Sender};
 
+mod message_span_iter;
 pub mod util;
 
 static CHAT_PREFIX: &str = "[D] ";
@@ -397,21 +398,20 @@ impl DiscordBridge {
             );
         }
 
-        let content = format_mentions_in(
-            msg.content.clone(),
+        let tellraw_msg_builder = tellraw_prefix()
+            .then(Payload::text(&format!("<{}> ", author_display_name)))
+            .hover_show_text(&format!(
+                "{}#{}",
+                &msg.author.name, &msg.author.discriminator
+            ));
+
+        let (content, tellraw_msg_builder) = format_mentions_in(
+            &msg.content,
+            tellraw_msg_builder,
             mentions_map,
             &msg.mention_roles,
             cache.clone(),
         );
-
-        let tellraw_msg = tellraw_prefix()
-            .then(Payload::text(&format!("<{}>", author_display_name)))
-            .hover_show_text(&format!(
-                "{}#{}",
-                &msg.author.name, &msg.author.discriminator
-            ))
-            .then(Payload::text(&format!(" {}", content)))
-            .build();
 
         // Tellraw commands do not get logged to the console, so we
         // make up for that here
@@ -429,7 +429,9 @@ impl DiscordBridge {
         .log();
 
         mc_cmd_sender
-            .send(ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()))
+            .send(ServerCommand::TellRawAll(
+                tellraw_msg_builder.build().to_json().unwrap(),
+            ))
             .await
             .ok();
     }
