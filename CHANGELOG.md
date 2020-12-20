@@ -4,6 +4,8 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+## [alpha4] - 2020-12-20
+
 ### Added
 
 * Mentions within Discord are now formatted with a blue color in Minecraft (similar to how they look in the Discord client)
@@ -61,7 +63,8 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 Tagging a first alpha release after a few months of working on the project.
 
-[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha3...HEAD
+[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha4...HEAD
+[alpha4]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha3...alpha4
 [alpha3]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha2...alpha3
 [alpha2]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha1...alpha2
 [alpha1]: https://github.com/Cldfire/mc-server-wrapper/releases/tag/alpha1
