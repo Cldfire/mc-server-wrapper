@@ -83,7 +83,7 @@ pub fn format_mentions_in<S: AsRef<str>>(
                         .map(|channel| Cow::from(format!("#{}", channel.name())))
                         // Throughout this function we fallback to the raw, unformatted
                         // text if we're unable to fetch relevant info from the cache
-                        .unwrap_or(Cow::from(raw));
+                        .unwrap_or_else(|| Cow::from(raw));
 
                     message_builder = message_builder
                         .then(Payload::text(cow.as_ref()))
@@ -97,7 +97,7 @@ pub fn format_mentions_in<S: AsRef<str>>(
                     let cow = cache
                         .emoji(id)
                         .map(|emoji| Cow::from(format!(":{}:", &emoji.name)))
-                        .unwrap_or(Cow::from(raw));
+                        .unwrap_or_else(|| Cow::from(raw));
 
                     message_builder = message_builder.then(Payload::text(cow.as_ref()));
                     cows.push(cow);
@@ -108,7 +108,7 @@ pub fn format_mentions_in<S: AsRef<str>>(
                         .find(|r| id == r.0)
                         .and_then(|role_id| cache.role(*role_id))
                         .map(|role| Cow::from(format!("@{}", &role.name)))
-                        .unwrap_or(Cow::from(raw));
+                        .unwrap_or_else(|| Cow::from(raw));
 
                     message_builder = message_builder
                         .then(Payload::text(cow.as_ref()))
@@ -119,7 +119,7 @@ pub fn format_mentions_in<S: AsRef<str>>(
                     let cow = mentions
                         .get(&id)
                         .map(|name| Cow::from(format!("@{}", name)))
-                        .unwrap_or(Cow::from(raw));
+                        .unwrap_or_else(|| Cow::from(raw));
 
                     message_builder = message_builder
                         .then(Payload::text(cow.as_ref()))

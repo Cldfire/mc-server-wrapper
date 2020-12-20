@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, fmt::Display};
 
 use chrono::{Duration, Local, TimeZone, Utc};
-use crossterm::event::{Event, KeyCode, KeyModifiers};
+use crossterm::event::{Event, KeyCode};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 use tui::{
     backend::Backend,
@@ -105,12 +105,10 @@ impl TabsState {
     /// Update the state based on the given input
     fn handle_input(&mut self, event: Event) {
         if let Event::Key(key_event) = event {
-            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                match key_event.code {
-                    KeyCode::Right => self.next(),
-                    KeyCode::Left => self.previous(),
-                    _ => {}
-                }
+            if key_event.code == KeyCode::Tab {
+                self.next();
+            } else if key_event.code == KeyCode::BackTab {
+                self.previous();
             }
         }
     }

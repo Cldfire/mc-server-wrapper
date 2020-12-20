@@ -2,7 +2,7 @@ use twilight_mention::parse::MentionType;
 use twilight_model::id::{ChannelId, EmojiId, RoleId, UserId};
 
 trait MentionTypeExt: Sized {
-    fn try_parse<'a>(buf: &'a str) -> Option<Self>;
+    fn try_parse(buf: &str) -> Option<Self>;
 }
 
 impl MentionTypeExt for MentionType {
@@ -10,7 +10,7 @@ impl MentionTypeExt for MentionType {
     ///
     /// This function will parse input such as "@!21984" successfully. It *does
     /// not* handle the < or > characters.
-    fn try_parse<'a>(buf: &'a str) -> Option<Self> {
+    fn try_parse(buf: &str) -> Option<Self> {
         if buf.starts_with("@!") {
             // Parse user ID
             buf.get(2..)
@@ -21,12 +21,12 @@ impl MentionTypeExt for MentionType {
             buf.get(2..)
                 .and_then(|s| s.parse().ok())
                 .map(|n| Self::Role(RoleId(n)))
-        } else if buf.starts_with("@") {
+        } else if buf.starts_with('@') {
             // Parse user ID
             buf.get(1..)
                 .and_then(|s| s.parse().ok())
                 .map(|n| Self::User(UserId(n)))
-        } else if buf.starts_with(":") {
+        } else if buf.starts_with(':') {
             // Parse emoji ID (looks like "<:name:123>")
             //
             // Find the second ":"
@@ -35,7 +35,7 @@ impl MentionTypeExt for MentionType {
                 .and_then(|idx| buf.get(idx + 1..))
                 .and_then(|s| s.parse().ok())
                 .map(|n| Self::Emoji(EmojiId(n)))
-        } else if buf.starts_with("#") {
+        } else if buf.starts_with('#') {
             // Parse channel ID
             buf.get(1..)
                 .and_then(|s| s.parse().ok())

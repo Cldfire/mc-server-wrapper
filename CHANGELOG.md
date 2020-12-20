@@ -11,6 +11,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
   * Also displayed when hovering over user mentions
   * This information is now logged as well
 
+### Changed
+
+* `Tab` / `Shift + Tab` are now the shortcuts used to change tabs in the UI
+
 ### Fixed
 
 * The session times displayed in the "Players" tab are now accurate
