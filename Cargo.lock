@@ -26,9 +26,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.35"
+version = "1.0.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c0df63cb2955042487fad3aefd2c6e3ae7389ac5dc1beb28921de0b69f779d4"
+checksum = "68803225a7b13e47191bab76f2687382b60d259e8cf37f6e1893658b84bb9479"
 
 [[package]]
 name = "async-tungstenite"
@@ -1704,13 +1704,12 @@ checksum = "e1bc737c97d093feb72e67f4926d9b22d717ce8580cd25f0ce86d74e859c466d"
 
 [[package]]
 name = "socket2"
-version = "0.3.17"
+version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c29947abdee2a218277abeca306f25789c938e500ea5a9d4b12a5a504466902"
+checksum = "97e0e9fd577458a4f61fb91fcb559ea2afecc54c934119421f9f5d3d5b1a1057"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
- "redox_syscall",
  "winapi 0.3.9",
 ]
 
@@ -1909,9 +1908,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.5.7"
+version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75cf45bb0bef80604d001caaec0d09da99611b3c0fd39d3080468875cdb65645"
+checksum = "a31142970826733df8241ef35dc040ef98c679ab14d7c3e54d827099b3acecaa"
 dependencies = [
  "serde",
 ]
@@ -2005,9 +2004,9 @@ dependencies = [
 
 [[package]]
 name = "twilight-cache-inmemory"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20673ef5f93ee11abe33f6f934567482e204cd8ea58428dfe5e0bfa7ca7698f6"
+checksum = "6e3669c51a2ad3aa20d0c80d4ba2b791973477f9e2d6188edd3c73c7d80ed380"
 dependencies = [
  "bitflags",
  "dashmap",
@@ -2063,9 +2062,9 @@ dependencies = [
 
 [[package]]
 name = "twilight-http"
-version = "0.2.5"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c0187cc65bb4fbb1cf1c423cbf7440c272ce80bdee95e7df796344a53ab1ea1"
+checksum = "af074bac6e8ca57f7127b9da58945af0a58f1651f79519d0bf70df34797a537e"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -2092,9 +2091,9 @@ dependencies = [
 
 [[package]]
 name = "twilight-model"
-version = "0.2.4"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7366e917f11e2bdd47758cc37e02bb20be84a3b18e5de9b86e1c6c8bf3e42740"
+checksum = "37102400d5588e19d6e74567d6ede2dd04b9d3d28b9a154e3bf54bf673b58789"
 dependencies = [
  "bitflags",
  "serde",

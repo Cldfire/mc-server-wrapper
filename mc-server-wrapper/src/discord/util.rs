@@ -350,6 +350,7 @@ mod test {
                     hoist: false,
                     managed: false,
                     mentionable: true,
+                    tags: None,
                     name: "test-role".into(),
                     permissions: Permissions::empty(),
                     position: 0,
