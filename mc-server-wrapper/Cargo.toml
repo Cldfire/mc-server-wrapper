@@ -27,7 +27,6 @@ anyhow = "1.0"
 crossterm = { version = "0.18", features = ["event-stream"] }
 tui = { version = "0.13", default-features = false, features = ["crossterm"] }
 unicode-width = "0.1"
-ringbuffer = { version = "0.3", default-features = false, features = ["alloc"] }
 textwrap = "0.13"
 toml = "0.5"
 serde = "1.0"

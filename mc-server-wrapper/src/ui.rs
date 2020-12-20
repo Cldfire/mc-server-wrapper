@@ -1,8 +1,10 @@
-use std::{collections::BTreeMap, fmt::Display};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    fmt::Display,
+};
 
 use chrono::{Duration, Local, TimeZone, Utc};
 use crossterm::event::{Event, KeyCode};
-use ringbuffer::{AllocRingBuffer, RingBuffer};
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -29,7 +31,7 @@ impl TuiState {
             // TODO: don't hardcode this
             tab_state: TabsState::new(vec!["Logs".into(), "Players".into()]),
             logs_state: LogsState {
-                records: AllocRingBuffer::with_capacity(512),
+                records: VecDeque::with_capacity(512),
                 progress_bar: None,
                 input_state: InputState { value: "".into() },
             },
@@ -168,7 +170,7 @@ pub struct LogsState {
     /// Stores the log messages to be displayed
     ///
     /// (original_message, (wrapped_message, wrapped_at_width))
-    records: AllocRingBuffer<(String, Option<(Vec<ListItem<'static>>, u16)>)>,
+    records: VecDeque<(String, Option<(Vec<ListItem<'static>>, u16)>)>,
     /// The current state of the active progress bar (if present)
     progress_bar: Option<ProgressBarState>,
     /// State for the input (child widget)
@@ -270,7 +272,7 @@ impl LogsState {
 
     /// Add a record to be displayed
     pub fn add_record(&mut self, record: String) {
-        self.records.push((record, None));
+        self.records.push_back((record, None));
     }
 
     /// Set the progress bar to the given percentage of completion
