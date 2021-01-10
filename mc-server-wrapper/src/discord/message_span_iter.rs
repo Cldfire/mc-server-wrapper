@@ -11,35 +11,27 @@ impl MentionTypeExt for MentionType {
     /// This function will parse input such as "@!21984" successfully. It *does
     /// not* handle the < or > characters.
     fn try_parse(buf: &str) -> Option<Self> {
-        if buf.starts_with("@!") {
+        if let Some(buf) = buf.strip_prefix("@!") {
             // Parse user ID
-            buf.get(2..)
-                .and_then(|s| s.parse().ok())
-                .map(|n| Self::User(UserId(n)))
-        } else if buf.starts_with("@&") {
+            buf.parse().ok().map(|n| Self::User(UserId(n)))
+        } else if let Some(buf) = buf.strip_prefix("@&") {
             // Parse role ID
-            buf.get(2..)
-                .and_then(|s| s.parse().ok())
-                .map(|n| Self::Role(RoleId(n)))
-        } else if buf.starts_with('@') {
+            buf.parse().ok().map(|n| Self::Role(RoleId(n)))
+        } else if let Some(buf) = buf.strip_prefix('@') {
             // Parse user ID
-            buf.get(1..)
-                .and_then(|s| s.parse().ok())
-                .map(|n| Self::User(UserId(n)))
-        } else if buf.starts_with(':') {
+            buf.parse().ok().map(|n| Self::User(UserId(n)))
+        } else if let Some(buf) = buf.strip_prefix(':') {
             // Parse emoji ID (looks like "<:name:123>")
             //
             // Find the second ":"
-            buf.find_after(1, ":")
+            buf.find(":")
                 // Skip past the second : to get to the ID
                 .and_then(|idx| buf.get(idx + 1..))
                 .and_then(|s| s.parse().ok())
                 .map(|n| Self::Emoji(EmojiId(n)))
-        } else if buf.starts_with('#') {
+        } else if let Some(buf) = buf.strip_prefix('#') {
             // Parse channel ID
-            buf.get(1..)
-                .and_then(|s| s.parse().ok())
-                .map(|n| Self::Channel(ChannelId(n)))
+            buf.parse().ok().map(|n| Self::Channel(ChannelId(n)))
         } else {
             None
         }
