@@ -4,6 +4,12 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+### Internal
+
+* Updated `tokio` to 1.0
+* Updated `twilight` to 0.3
+* Updated other dependencies
+
 ## [alpha4] - 2020-12-20
 
 ### Added

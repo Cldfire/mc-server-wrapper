@@ -329,9 +329,11 @@ impl PlayersState {
             .collect::<Vec<_>>();
 
         let online_players = Table::new(
-            ["Name", "Login Time", "Session Length"].iter(),
-            online_players.iter().map(|d| Row::Data(d.iter())),
+            online_players
+                .iter()
+                .map(|d| Row::new(d.iter().map(|s| s.as_ref()))),
         )
+        .header(Row::new(vec!["Name", "Login Time", "Session Length"]))
         .block(Block::default().borders(Borders::NONE))
         .widths(&[
             Constraint::Length(16),
