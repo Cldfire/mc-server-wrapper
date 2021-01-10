@@ -24,7 +24,7 @@ impl MentionTypeExt for MentionType {
             // Parse emoji ID (looks like "<:name:123>")
             //
             // Find the second ":"
-            buf.find(":")
+            buf.find(':')
                 // Skip past the second : to get to the ID
                 .and_then(|idx| buf.get(idx + 1..))
                 .and_then(|s| s.parse().ok())
