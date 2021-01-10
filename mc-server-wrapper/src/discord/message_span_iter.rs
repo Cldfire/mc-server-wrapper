@@ -67,7 +67,7 @@ pub enum MessageSpan<'a> {
     ///
     /// The left side of the tuple is the parsed data and the right side is the
     /// string slice that it was parsed from.
-    Mention((MentionType, &'a str)),
+    Mention(MentionType, &'a str),
 }
 
 impl<'a> MessageSpan<'a> {
@@ -88,7 +88,7 @@ impl<'a> Iterator for MessageSpanIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(mention_type) = self.mention.take() {
             // Yield the previously stored mention info if it's present
-            Some(MessageSpan::Mention(mention_type))
+            Some(MessageSpan::Mention(mention_type.0, mention_type.1))
         } else if let Some((start, end)) = self
             .buf
             .find('<')
@@ -153,53 +153,45 @@ mod test {
                         "channel ",
                     ),
                     Mention(
-                        (
-                            Channel(
-                                ChannelId(
-                                    12,
-                                ),
+                        Channel(
+                            ChannelId(
+                                12,
                             ),
-                            "<#12>",
                         ),
+                        "<#12>",
                     ),
                     Text(
                         " emoji ",
                     ),
                     Mention(
-                        (
-                            Emoji(
-                                EmojiId(
-                                    34,
-                                ),
+                        Emoji(
+                            EmojiId(
+                                34,
                             ),
-                            "<:name:34>",
                         ),
+                        "<:name:34>",
                     ),
                     Text(
                         " role ",
                     ),
                     Mention(
-                        (
-                            Role(
-                                RoleId(
-                                    56,
-                                ),
+                        Role(
+                            RoleId(
+                                56,
                             ),
-                            "<@&56>",
                         ),
+                        "<@&56>",
                     ),
                     Text(
                         " user ",
                     ),
                     Mention(
-                        (
-                            User(
-                                UserId(
-                                    78,
-                                ),
+                        User(
+                            UserId(
+                                78,
                             ),
-                            "<@78>",
                         ),
+                        "<@78>",
                     ),
                 ]
             "##]],

@@ -76,7 +76,7 @@ pub fn format_mentions_in<S: AsRef<str>>(
                 message_builder = message_builder.then(Payload::text(text));
                 cows.push(Cow::from(text));
             }
-            MessageSpan::Mention((mention_type, raw)) => match mention_type {
+            MessageSpan::Mention(mention_type, raw) => match mention_type {
                 MentionType::Channel(id) => {
                     let cow = cache
                         .guild_channel(id)
