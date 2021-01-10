@@ -8,14 +8,14 @@ edition = "2018"
 [dependencies]
 mc-server-wrapper-lib = { path = "../mc-server-wrapper-lib" }
 structopt = "0.3"
-tokio = { version = "0.2", features = ["full"] }
+tokio = { version = "1.0", features = ["full"] }
 futures = "0.3"
-twilight-http = "0.2"
-twilight-gateway = "0.2"
-twilight-cache-inmemory = "0.2"
-twilight-model = "0.2"
-twilight-command-parser = "0.2"
-twilight-mention = "0.2"
+twilight-http = "0.3"
+twilight-gateway = "0.3"
+twilight-cache-inmemory = "0.3"
+twilight-model = "0.3"
+twilight-command-parser = "0.3"
+twilight-mention = "0.3"
 minecraft-protocol = "0.1"
 log = "0.4"
 fern = "0.6"

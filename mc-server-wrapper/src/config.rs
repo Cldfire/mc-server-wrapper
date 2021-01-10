@@ -125,8 +125,8 @@ impl Config {
                 //
                 // This should never occur, so it's safe to unwrap here
                 let event = rx.recv().unwrap();
-                let mut sender_clone = notify_sender.clone();
-                handle.block_on(async move {
+                let sender_clone = notify_sender.clone();
+                handle.spawn(async move {
                     sender_clone.send(event).await.unwrap();
                 });
             }

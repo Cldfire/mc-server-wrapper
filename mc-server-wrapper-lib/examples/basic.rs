@@ -10,7 +10,6 @@ to a Minecraft server.
 */
 
 use std::path::PathBuf;
-use tokio::stream::StreamExt;
 
 use structopt::StructOpt;
 
@@ -28,7 +27,7 @@ async fn main() {
     let opt = Opt::from_args();
 
     let config = McServerConfig::new(opt.server_path.clone(), 1024, None, true);
-    let (_, mut cmd_sender, mut event_receiver) = McServerManager::new();
+    let (_, cmd_sender, mut event_receiver) = McServerManager::new();
     cmd_sender
         .send(ServerCommand::StartServer {
             config: Some(config),
@@ -36,7 +35,7 @@ async fn main() {
         .await
         .unwrap();
 
-    while let Some(e) = event_receiver.next().await {
+    while let Some(e) = event_receiver.recv().await {
         match e {
             ServerEvent::ConsoleEvent(console_msg, Some(specific_msg)) => {
                 println!("{}", console_msg);

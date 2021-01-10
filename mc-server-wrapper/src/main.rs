@@ -3,10 +3,8 @@ use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 use anyhow::Context;
 
 use chrono::{DateTime, Utc};
-use tokio::{
-    stream::StreamExt,
-    sync::{mpsc, Mutex},
-};
+use futures::{FutureExt, StreamExt};
+use tokio::sync::{mpsc, Mutex};
 
 use once_cell::sync::OnceCell;
 use scopeguard::defer;
@@ -129,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
         config.minecraft.jvm_flags,
         false,
     );
-    let (mc_server, mut mc_cmd_sender, mut mc_event_receiver) = McServerManager::new();
+    let (mc_server, mc_cmd_sender, mut mc_event_receiver) = McServerManager::new();
 
     info!("Starting the Minecraft server");
     mc_cmd_sender
@@ -163,7 +161,7 @@ async fn main() -> anyhow::Result<()> {
     // This loop handles both user input and events from the Minecraft server
     loop {
         // Make sure we are up-to-date on logs before drawing the UI
-        while let Ok(record) = log_receiver.try_recv() {
+        while let Some(Some(record)) = log_receiver.recv().now_or_never() {
             tui_state.logs_state.add_record(record);
         }
 
@@ -174,7 +172,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         tokio::select! {
-            e = mc_event_receiver.next() => if let Some(e) = e {
+            e = mc_event_receiver.recv() => if let Some(e) = e {
                 match e {
                     ServerEvent::ConsoleEvent(console_msg, Some(specific_msg)) => {
                         if let ConsoleMsgType::Unknown(ref s) = console_msg.msg_type {
@@ -325,7 +323,7 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 break;
             },
-            Some(record) = log_receiver.next() => {
+            Some(record) = log_receiver.recv() => {
                 tui_state.logs_state.add_record(record);
             },
             maybe_term_event = term_events.next() => {
@@ -370,7 +368,7 @@ async fn main() -> anyhow::Result<()> {
                     },
                 }
             },
-            config_file_event = notify_receiver.next() => {
+            config_file_event = notify_receiver.recv() => {
                 match config_file_event {
                     Some(event) => match event {
                         DebouncedEvent::Write(path) => {

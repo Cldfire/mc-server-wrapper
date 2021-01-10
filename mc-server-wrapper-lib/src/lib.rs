@@ -1,9 +1,7 @@
 use tokio::{
     fs::File,
-    io::BufReader,
-    prelude::*,
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process,
-    stream::StreamExt,
     sync::{mpsc, oneshot, Mutex},
 };
 
@@ -146,13 +144,13 @@ impl McServerManager {
 
     fn spawn_listener(
         self: Arc<Self>,
-        mut event_sender: mpsc::Sender<ServerEvent>,
+        event_sender: mpsc::Sender<ServerEvent>,
         mut cmd_receiver: mpsc::Receiver<ServerCommand>,
     ) {
         tokio::spawn(async move {
             let mut current_config: Option<McServerConfig> = None;
 
-            while let Some(cmd) = cmd_receiver.next().await {
+            while let Some(cmd) = cmd_receiver.recv().await {
                 use ServerCommand::*;
                 use ServerEvent::*;
 
@@ -168,7 +166,7 @@ impl McServerManager {
                     }
 
                     AgreeToEula => {
-                        let mut event_sender_clone = event_sender.clone();
+                        let event_sender_clone = event_sender.clone();
 
                         if let Some(config) = &current_config {
                             let server_path = config.server_path.clone();
@@ -222,7 +220,7 @@ impl McServerManager {
                         // Spawn a task to drive the server process to completion
                         // and send an event when it exits
                         tokio::spawn(async move {
-                            let mut event_sender = event_sender_clone;
+                            let event_sender = event_sender_clone;
                             let ret =
                                 McServerInternal::run_server(child, rx, event_sender.clone()).await;
                             let _ = internal_clone.lock().await.take();
@@ -390,12 +388,12 @@ impl McServerInternal {
         let mut stdout = BufReader::new(process.stdout.take().unwrap()).lines();
         let mut stderr = BufReader::new(process.stderr.take().unwrap()).lines();
 
-        let status_handle = tokio::spawn(async { process.await });
+        let status_handle = tokio::spawn(async move { process.wait().await });
 
         let event_sender_clone = event_sender.clone();
         let stderr_handle = tokio::spawn(async move {
             use ServerEvent::*;
-            let mut event_sender = event_sender_clone;
+            let event_sender = event_sender_clone;
 
             while let Some(line) = stderr.next_line().await.unwrap() {
                 event_sender.send(StderrLine(line)).await.unwrap();
@@ -404,7 +402,7 @@ impl McServerInternal {
 
         let stdout_handle = tokio::spawn(async move {
             use ServerEvent::*;
-            let mut event_sender = event_sender;
+            let event_sender = event_sender;
             let mut shutdown_reason = None;
 
             while let Some(line) = stdout.next_line().await.unwrap() {

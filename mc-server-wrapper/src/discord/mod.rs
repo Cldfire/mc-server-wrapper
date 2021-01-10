@@ -1,6 +1,6 @@
 use log::{debug, info, warn};
 
-use twilight_cache_inmemory::{model::CachedMember, EventType, InMemoryCache};
+use twilight_cache_inmemory::{model::CachedMember, InMemoryCache, ResourceType};
 use twilight_command_parser::{Command, CommandParserConfig, Parser};
 use twilight_gateway::{Cluster, Event};
 use twilight_http::{
@@ -24,9 +24,9 @@ use util::{
 };
 
 use crate::ONLINE_PLAYERS;
-use futures::future;
+use futures::{future, StreamExt};
 use std::{collections::HashMap, sync::Arc};
-use tokio::{stream::StreamExt, sync::mpsc::Sender};
+use tokio::sync::mpsc::Sender;
 
 mod message_span_iter;
 pub mod util;
@@ -126,18 +126,7 @@ impl DiscordBridge {
         });
 
         let cache = InMemoryCache::builder()
-            .event_types(
-                EventType::GUILD_CREATE
-                    | EventType::GUILD_UPDATE
-                    | EventType::GUILD_DELETE
-                    | EventType::CHANNEL_CREATE
-                    | EventType::CHANNEL_UPDATE
-                    | EventType::CHANNEL_DELETE
-                    | EventType::MEMBER_ADD
-                    | EventType::MEMBER_CHUNK
-                    | EventType::MEMBER_REMOVE
-                    | EventType::MEMBER_UPDATE,
-            )
+            .resource_types(ResourceType::GUILD | ResourceType::CHANNEL | ResourceType::MEMBER)
             .build();
 
         Ok(Self {
@@ -221,10 +210,10 @@ impl DiscordBridge {
     /// The provided `cmd_parser` is used to parse commands (not
     /// `ServerCommands`) from Discord messages.
     #[allow(clippy::single_match)]
-    pub async fn handle_discord_event<'a>(
+    pub async fn handle_discord_event(
         &self,
         event: (u64, Event),
-        cmd_parser: Parser<'a>,
+        cmd_parser: Parser<'_>,
         mc_cmd_sender: Sender<ServerCommand>,
     ) -> anyhow::Result<()> {
         match event {
@@ -236,7 +225,8 @@ impl DiscordBridge {
                 // in this guild
                 if let Some(channel_name) = guild
                     .channels
-                    .get(&self.bridge_channel_id)
+                    .iter()
+                    .find(|c| c.id() == self.bridge_channel_id)
                     .map(|c| c.name())
                 {
                     info!(
@@ -320,7 +310,7 @@ impl DiscordBridge {
         &self,
         msg: &Message,
         author_display_name: &str,
-        mut mc_cmd_sender: Sender<ServerCommand>,
+        mc_cmd_sender: Sender<ServerCommand>,
     ) {
         for attachment in &msg.attachments {
             let type_str = if attachment.height.is_some() {
@@ -368,7 +358,7 @@ impl DiscordBridge {
         &self,
         msg: &Message,
         author_display_name: &str,
-        mut mc_cmd_sender: Sender<ServerCommand>,
+        mc_cmd_sender: Sender<ServerCommand>,
     ) {
         if msg.content.is_empty() {
             debug!("Empty message from Discord: {:?}", &msg);
@@ -381,8 +371,9 @@ impl DiscordBridge {
         // Get info about mentioned members from the cache and / or API if available
         let cached_mentioned_members = future::join_all(
             msg.mentions
-                .keys()
-                .map(|id| async move { self.obtain_guild_member(guild_id, *id).await }),
+                .iter()
+                .map(|m| m.id)
+                .map(|id| async move { self.obtain_guild_member(guild_id, id).await }),
         )
         .await;
 
@@ -391,10 +382,10 @@ impl DiscordBridge {
         let mut mentions_map = HashMap::new();
         for (mention, cmm) in msg.mentions.iter().zip(cached_mentioned_members.iter()) {
             mentions_map.insert(
-                *mention.0,
+                mention.id,
                 cmm.as_ref()
                     .and_then(|cm| cm.nick.as_deref())
-                    .unwrap_or_else(|| mention.1.name.as_str()),
+                    .unwrap_or_else(|| mention.name.as_str()),
             );
         }
 
@@ -441,7 +432,7 @@ impl DiscordBridge {
         &self,
         msg: &Message,
         author_display_name: &str,
-        mut mc_cmd_sender: Sender<ServerCommand>,
+        mc_cmd_sender: Sender<ServerCommand>,
     ) {
         for embed in msg.embeds.iter().filter(|e| e.url.is_some()) {
             // TODO: this is kinda ugly

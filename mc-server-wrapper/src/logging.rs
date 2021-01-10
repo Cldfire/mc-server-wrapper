@@ -63,7 +63,7 @@ pub fn setup_logger<P: AsRef<Path>>(
                 record.args()
             );
 
-            let mut log_sender_clone = log_sender.clone();
+            let log_sender_clone = log_sender.clone();
             // TODO: right now log messages can print out-of-order because we
             // don't block on sending them
             //
