@@ -17,7 +17,7 @@ use twilight_model::{
 };
 
 use mc_server_wrapper_lib::{communication::*, parse::*};
-use minecraft_protocol::chat::{Color, Payload};
+use minecraft_chat::{Color, Payload};
 
 use util::{
     activity, format_mentions_in, format_online_players, tellraw_prefix, OnlinePlayerFormat,
