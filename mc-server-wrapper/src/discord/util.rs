@@ -1,7 +1,7 @@
 use crate::OnlinePlayerInfo;
 
 use super::{message_span_iter::MessageSpan, CHAT_PREFIX};
-use minecraft_protocol::chat::{Color, MessageBuilder, Payload};
+use minecraft_chat::{Color, MessageBuilder, Payload};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
@@ -312,7 +312,7 @@ mod test {
 
     mod content_format_mentions {
         use super::super::format_mentions_in;
-        use minecraft_protocol::chat::{MessageBuilder, Payload};
+        use minecraft_chat::{MessageBuilder, Payload};
         use std::collections::HashMap;
         use twilight_cache_inmemory::InMemoryCache;
         use twilight_model::{
