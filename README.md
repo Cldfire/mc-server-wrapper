@@ -32,7 +32,7 @@ You can download prebuilt binaries in the [releases section](https://github.com/
 You can also build and install from source (requires an up-to-date [Rust](https://www.rust-lang.org) install):
 
 ```
-cargo install --git https://github.com/Cldfire/mc-server-wrapper.git
+cargo install --git https://github.com/Cldfire/mc-server-wrapper.git --locked
 ```
 
 ## Usage

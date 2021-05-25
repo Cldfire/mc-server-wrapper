@@ -8,7 +8,9 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 * Updated `tokio` to 1.0
 * Updated `twilight` to 0.3
+* Updated `tui` to 0.15
 * Updated other dependencies
+* Replaced `minecraft-protocol` dependency with `minecraft-chat`
 
 ## [alpha4] - 2020-12-20
 
