@@ -10,12 +10,12 @@ mc-server-wrapper-lib = { path = "../mc-server-wrapper-lib" }
 structopt = "0.3"
 tokio = { version = "1.0", features = ["full"] }
 futures = "0.3"
-twilight-http = "0.3"
-twilight-gateway = "0.3"
-twilight-cache-inmemory = "0.3"
-twilight-model = "0.3"
-twilight-command-parser = "0.3"
-twilight-mention = "0.3"
+twilight-http = "0.4"
+twilight-gateway = "0.4"
+twilight-cache-inmemory = "0.4"
+twilight-model = "0.4"
+twilight-command-parser = "0.4"
+twilight-mention = "0.4"
 minecraft-chat = "0.1" # TODO: replace this with a crate of my own
 log = "0.4"
 fern = "0.6"

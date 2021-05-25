@@ -4,7 +4,7 @@ use twilight_cache_inmemory::{model::CachedMember, InMemoryCache, ResourceType};
 use twilight_command_parser::{Command, CommandParserConfig, Parser};
 use twilight_gateway::{Cluster, Event};
 use twilight_http::{
-    request::prelude::create_message::CreateMessageError, Client as DiscordClient,
+    request::prelude::create_message::CreateMessageErrorType, Client as DiscordClient,
 };
 use twilight_model::{
     channel::{message::MessageType, Message},
@@ -505,8 +505,8 @@ impl DiscordBridge {
                             warn!("Failed to send Discord message: {}", e);
                         }
                     }
-                    Err(validation_err) => match validation_err {
-                        CreateMessageError::ContentInvalid { content } => warn!(
+                    Err(validation_err) => match validation_err.kind() {
+                        CreateMessageErrorType::ContentInvalid { content } => warn!(
                             "Attempted to send invalid message to Discord, content was: {}",
                             content
                         ),
