@@ -76,7 +76,7 @@ Small release updating some dependencies.
 Tagging a first alpha release after a few months of working on the project.
 
 [Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha5...HEAD
-[alpha4]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha4...alpha5
+[alpha5]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha4...alpha5
 [alpha4]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha3...alpha4
 [alpha3]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha2...alpha3
 [alpha2]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha1...alpha2
