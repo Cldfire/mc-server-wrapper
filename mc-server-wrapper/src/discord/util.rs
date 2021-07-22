@@ -147,7 +147,7 @@ pub fn format_mentions_in<S: AsRef<str>>(
 }
 
 /// Different formats online player data can be turned into
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum OnlinePlayerFormat {
     /// Format intended to be used as the response to a command
     CommandResponse {
@@ -295,18 +295,6 @@ pub fn sanitize_for_markdown<T: AsRef<str>>(text: T) -> String {
         }
         s
     })
-}
-
-#[cfg(test)]
-fn make_players_map<'a>(
-    names: impl IntoIterator<Item = &'a &'a str>,
-) -> BTreeMap<String, OnlinePlayerInfo> {
-    let mut online_players = BTreeMap::new();
-    names.into_iter().for_each(|n| {
-        online_players.insert(n.to_string(), OnlinePlayerInfo::default());
-    });
-
-    online_players
 }
 
 #[cfg(test)]
@@ -630,200 +618,178 @@ mod content_format_mentions {
 }
 
 #[cfg(test)]
-mod format_online_players_command_response {
+mod format_online_players {
     use super::*;
 
-    mod common {
-        use super::*;
+    fn make_players_map<'a>(
+        names: impl IntoIterator<Item = &'a &'a str>,
+    ) -> BTreeMap<String, OnlinePlayerInfo> {
+        let mut online_players = BTreeMap::new();
+        names.into_iter().for_each(|n| {
+            online_players.insert(n.to_string(), OnlinePlayerInfo::default());
+        });
 
-        #[test]
-        fn markdown_in_names() {
-            let online_players = make_players_map(&["p1_", "*`p2`"]);
-            let expected = "\\*\\`p2\\` and p1\\_ are playing Minecraft";
+        online_players
+    }
 
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: true },
-            );
-            assert_eq!(&formatted, expected);
+    fn check(format: OnlinePlayerFormat, player_names: &[&str], expected: &str) {
+        let online_players = make_players_map(player_names);
 
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: false },
-            );
-            assert_eq!(&formatted, expected);
-        }
+        let formatted = format_online_players(&online_players, format);
+        assert_eq!(&formatted, expected);
 
-        #[test]
-        fn no_players() {
-            let online_players = make_players_map(&[]);
-            let expected = "Nobody is playing Minecraft";
-
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: true },
-            );
-            assert_eq!(&formatted, expected);
-
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: false },
-            );
-            assert_eq!(&formatted, expected);
-        }
-
-        #[test]
-        fn one_player() {
-            let online_players = make_players_map(&["p1"]);
-            let expected = "p1 is playing Minecraft";
-
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: true },
-            );
-            assert_eq!(&formatted, expected);
-
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: false },
-            );
-            assert_eq!(&formatted, expected);
-        }
-
-        #[test]
-        fn two_players() {
-            let online_players = make_players_map(&["p1", "p2"]);
-            let expected = "p1 and p2 are playing Minecraft";
-
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: true },
-            );
-            assert_eq!(&formatted, expected);
-
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: false },
-            );
-            assert_eq!(&formatted, expected);
-        }
-
-        #[test]
-        fn three_players() {
-            let online_players = make_players_map(&["p1", "p2", "p3"]);
-            let expected = "p1, p2, and p3 are playing Minecraft";
-
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: true },
-            );
-            assert_eq!(&formatted, expected);
-
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: false },
-            );
-            assert_eq!(&formatted, expected);
+        if matches!(format, OnlinePlayerFormat::BotStatus) {
+            // Bot status messages are limited to 128 characters, make sure we're
+            // not generating messages longer than that
+            assert!(formatted.len() <= 128);
         }
     }
 
-    mod short {
-        use super::*;
+    macro_rules! tests [
+        // Allows for specifying an array of named test cases that will be tested
+        // against each named format.
+        //
+        // Here, a module is generated for each named test case, and within each
+        // module a test function is generated for each named format.
+        (
+            formats: $formats:tt,
+            $(
+                $module:ident: {
+                    player_names: $player_names:expr,
+                    expected: $expected:literal,
+                },
+            )*
+        ) => {
+            $(
+                mod $module {
+                    use super::*;
 
-        #[test]
-        fn four_players() {
-            let online_players = make_players_map(&["p1", "p2", "p3", "p4"]);
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: true },
-            );
+                    tests!(formats: $formats, $player_names, $expected);
+                }
+            )*
+        };
 
-            assert_eq!(
-                &formatted,
-                "p1, p2, and p3 (+ 1 more) are playing Minecraft"
-            );
-        }
+        // Exists to allow the above rule to recurse and create test functions.
+        (
+            formats: [
+                $(
+                    $test:ident: $format:expr,
+                )*
+            ],
+            $player_names:expr,
+            $expected:expr
+        ) => {
+            $(
+                #[test]
+                fn $test() {
+                    check($format, &$player_names, $expected);
+                }
+            )*
+        };
 
-        #[test]
-        fn seven_players() {
-            let online_players = make_players_map(&["p1", "p3", "p2", "p4", "p6", "p5", "p7"]);
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: true },
-            );
+        // Allows for specifying an array of named test cases that will be tested
+        // against the named format.
+        //
+        // Here, the generated module is named `$format_name`, and a single test
+        // function is generated for each named test case.
+        (
+            format: $format:expr,
+            format_name: $format_name:ident,
+            $(
+                $test:ident: {
+                    player_names: $player_names:expr,
+                    expected: $expected:literal,
+                },
+            )*
+        ) => {
+            mod $format_name {
+                use super::*;
 
-            assert_eq!(
-                &formatted,
-                "p1, p2, and p3 (+ 4 more) are playing Minecraft"
-            );
-        }
-    }
+                $(
+                    #[test]
+                    fn $test() {
+                        check($format, &$player_names, $expected);
+                    }
+                )*
+            }
+        };
+    ];
 
-    mod long {
-        use super::*;
+    tests! [
+        formats: [
+            short: OnlinePlayerFormat::CommandResponse { short: true },
+            long: OnlinePlayerFormat::CommandResponse { short: false },
+        ],
+        markdown_in_names: {
+            player_names: ["p1_", "*`p2`"],
+            expected: "\\*\\`p2\\` and p1\\_ are playing Minecraft",
+        },
+        no_players: {
+            player_names: [],
+            expected: "Nobody is playing Minecraft",
+        },
+        one_player: {
+            player_names: ["p1"],
+            expected: "p1 is playing Minecraft",
+        },
+        two_players: {
+            player_names: ["p1", "p2"],
+            expected: "p1 and p2 are playing Minecraft",
+        },
+        three_players: {
+            player_names: ["p1", "p2", "p3"],
+            expected: "p1, p2, and p3 are playing Minecraft",
+        },
+    ];
 
-        #[test]
-        fn seven_players() {
-            let online_players = make_players_map(&["p1", "p2", "p3", "p4", "p5", "p6", "p7"]);
-            let formatted = format_online_players(
-                &online_players,
-                OnlinePlayerFormat::CommandResponse { short: false },
-            );
+    tests! [
+        format: OnlinePlayerFormat::CommandResponse { short: true },
+        format_name: short,
+        four_players: {
+            player_names: ["p1", "p2", "p3", "p4"],
+            expected: "p1, p2, and p3 (+ 1 more) are playing Minecraft",
+        },
+        seven_players: {
+            player_names: ["p1", "p3", "p2", "p4", "p6", "p5", "p7"],
+            expected: "p1, p2, and p3 (+ 4 more) are playing Minecraft",
+        },
+    ];
 
-            assert_eq!(
-                &formatted,
-                "p1, p2, p3, p4, p5, p6, and p7 are playing Minecraft"
-            );
-        }
-    }
-}
+    tests! [
+        format: OnlinePlayerFormat::CommandResponse { short: false },
+        format_name: long,
+        seven_players: {
+            player_names: ["p1", "p3", "p2", "p4", "p6", "p5", "p7"],
+            expected: "p1, p2, p3, p4, p5, p6, and p7 are playing Minecraft",
+        },
+    ];
 
-#[cfg(test)]
-mod format_online_players_bot_status {
-    use super::*;
-
-    #[test]
-    fn one_player() {
-        let online_players = make_players_map(&["p1"]);
-        let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
-
-        assert_eq!(&formatted, "Minecraft with p1");
-    }
-
-    #[test]
-    fn two_players() {
-        let online_players = make_players_map(&["p1", "p2"]);
-        let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
-
-        assert_eq!(&formatted, "Minecraft with p1 and p2");
-    }
-
-    #[test]
-    fn three_players() {
-        let online_players = make_players_map(&["p1", "p2", "p3"]);
-        let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
-
-        assert_eq!(&formatted, "Minecraft with p1, p2, and p3");
-    }
-
-    #[test]
-    fn four_players() {
-        let online_players = make_players_map(&["p1", "p2", "p3", "p4"]);
-        let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
-
-        assert_eq!(&formatted, "Minecraft with p1, p2, p3, and p4");
-    }
-
-    #[test]
-    fn lots_of_players() {
-        let online_players = make_players_map(&[
-            "player1", "player2", "player3", "player11", "player5", "player6", "player7",
-            "player8", "player9", "player10", "player4", "player12", "player13", "player14",
-            "player15",
-        ]);
-        let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
-
-        assert_eq!(&formatted, "Minecraft with player1, player10, player11, player12, player13, player14, player15, player2, and player3 (+ 6 more)");
-        assert!(formatted.len() <= 128);
-    }
+    tests! [
+        format: OnlinePlayerFormat::BotStatus,
+        format_name: bot_status,
+        one_player: {
+            player_names: ["p1"],
+            expected: "Minecraft with p1",
+        },
+        two_players: {
+            player_names: ["p1", "p2"],
+            expected: "Minecraft with p1 and p2",
+        },
+        three_players: {
+            player_names: ["p1", "p2", "p3"],
+            expected: "Minecraft with p1, p2, and p3",
+        },
+        four_players: {
+            player_names: ["p1", "p2", "p3", "p4"],
+            expected: "Minecraft with p1, p2, p3, and p4",
+        },
+        lots_of_players: {
+            player_names: [
+                "player1", "player2", "player3", "player11", "player5", "player6", "player7",
+                "player8", "player9", "player10", "player4", "player12", "player13", "player14",
+                "player15",
+            ],
+            expected: "Minecraft with player1, player10, player11, player12, player13, player14, player15, player2, and player3 (+ 6 more)",
+        },
+    ];
 }
