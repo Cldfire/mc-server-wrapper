@@ -81,7 +81,7 @@ pub struct Opt {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), anyhow::Error> {
     log_panics::init();
     CONSOLE_MSG_LOG_TARGET.set("mc").unwrap();
     ONLINE_PLAYERS.set(Mutex::new(BTreeMap::new())).unwrap();

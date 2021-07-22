@@ -4,6 +4,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+### Internal
+
+* Updated `twilight` to 0.5
+
 ## [alpha5] - 2021-5-24
 
 Small release updating some dependencies.

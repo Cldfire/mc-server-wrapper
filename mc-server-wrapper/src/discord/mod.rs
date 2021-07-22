@@ -2,14 +2,14 @@ use log::{debug, info, warn};
 
 use twilight_cache_inmemory::{model::CachedMember, InMemoryCache, ResourceType};
 use twilight_command_parser::{Command, CommandParserConfig, Parser};
-use twilight_gateway::{Cluster, Event};
+use twilight_gateway::{cluster::Events, Cluster, Event};
 use twilight_http::{
     request::prelude::create_message::CreateMessageErrorType, Client as DiscordClient,
 };
 use twilight_model::{
     channel::{message::MessageType, Message},
     gateway::{
-        payload::{RequestGuildMembers, UpdateStatus},
+        payload::{RequestGuildMembers, UpdatePresence},
         presence::Status,
         Intents,
     },
@@ -25,7 +25,7 @@ use util::{
 
 use crate::ONLINE_PLAYERS;
 use futures::{future, StreamExt};
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
 
 mod message_span_iter;
@@ -42,9 +42,10 @@ pub async fn setup_discord(
     bridge_channel_id: ChannelId,
     mc_cmd_sender: Sender<ServerCommand>,
     allow_status_updates: bool,
-) -> anyhow::Result<DiscordBridge> {
+) -> Result<DiscordBridge, anyhow::Error> {
     info!("Setting up Discord");
-    let discord = DiscordBridge::new(token, bridge_channel_id, allow_status_updates).await?;
+    let (discord, mut events) =
+        DiscordBridge::new(token, bridge_channel_id, allow_status_updates).await?;
 
     let discord_clone = discord.clone();
     tokio::spawn(async move {
@@ -53,8 +54,6 @@ pub async fn setup_discord(
 
         // For all received Discord events, map the event to a `ServerCommand`
         // (if necessary) and send it to the Minecraft server
-        // TODO: don't unwrap here
-        let mut events = discord.cluster_ref().unwrap().events();
         while let Some(e) = events.next().await {
             let discord = discord.clone();
             let cmd_sender_clone = mc_cmd_sender.clone();
@@ -103,17 +102,17 @@ struct DiscordBridgeInner {
 }
 
 impl DiscordBridge {
-    /// Connects to Discord with the given `token` and `bridge_channel_id`
+    /// Connects to Discord with the given `token` and `bridge_channel_id`.
     ///
     /// If `allow_status_updates` is set to `false` any calls to `update_status()`
-    /// will be no-ops
+    /// will be no-ops.
     pub async fn new(
         token: String,
         bridge_channel_id: ChannelId,
         allow_status_updates: bool,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<(Self, Events), anyhow::Error> {
         let client = DiscordClient::new(&token);
-        let cluster = Cluster::builder(
+        let (cluster, events) = Cluster::builder(
             &token,
             Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::GUILD_MEMBERS,
         )
@@ -129,15 +128,18 @@ impl DiscordBridge {
             .resource_types(ResourceType::GUILD | ResourceType::CHANNEL | ResourceType::MEMBER)
             .build();
 
-        Ok(Self {
-            inner: Some(DiscordBridgeInner {
-                client,
-                cluster,
-                cache,
-            }),
-            bridge_channel_id,
-            allow_status_updates,
-        })
+        Ok((
+            Self {
+                inner: Some(DiscordBridgeInner {
+                    client,
+                    cluster,
+                    cache,
+                }),
+                bridge_channel_id,
+                allow_status_updates,
+            },
+            events,
+        ))
     }
 
     /// Constructs an instance of this struct that does nothing
@@ -152,11 +154,6 @@ impl DiscordBridge {
     /// Provides access to the `Cluster` inside this struct
     pub fn cluster(&self) -> Option<Cluster> {
         self.inner.as_ref().map(|i| i.cluster.clone())
-    }
-
-    /// Provides a reference to the `Cluster` inside this struct
-    pub fn cluster_ref(&self) -> Option<&Cluster> {
-        self.inner.as_ref().map(|i| &i.cluster)
     }
 
     /// Provides access to the `InMemoryCache` inside this struct
@@ -191,7 +188,7 @@ impl DiscordBridge {
         &self,
         guild_id: GuildId,
         user_id: UserId,
-    ) -> Option<Arc<CachedMember>> {
+    ) -> Option<CachedMember> {
         // First check the cache
         if let Some(cached_member) = self.cache().unwrap().member(guild_id, user_id) {
             Some(cached_member)
@@ -215,7 +212,7 @@ impl DiscordBridge {
         event: (u64, Event),
         cmd_parser: Parser<'_>,
         mc_cmd_sender: Sender<ServerCommand>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), anyhow::Error> {
         match event {
             (_, Event::Ready(_)) => {
                 info!("Discord bridge online");
@@ -540,12 +537,15 @@ impl DiscordBridge {
                 for shard_id in inner.cluster.info().keys() {
                     if let Some(shard) = inner.cluster.shard(*shard_id) {
                         match shard
-                            .command(&UpdateStatus::new(
-                                vec![activity(text.clone())],
-                                false,
-                                None,
-                                Status::Online,
-                            ))
+                            .command(
+                                &UpdatePresence::new(
+                                    vec![activity(text.clone())],
+                                    false,
+                                    None,
+                                    Status::Online,
+                                )
+                                .unwrap(),
+                            )
                             .await
                         {
                             Ok(()) => {}
