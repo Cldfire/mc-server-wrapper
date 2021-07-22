@@ -298,537 +298,532 @@ pub fn sanitize_for_markdown<T: AsRef<str>>(text: T) -> String {
 }
 
 #[cfg(test)]
-mod test {
-    use std::collections::BTreeMap;
+fn make_players_map<'a>(
+    names: impl IntoIterator<Item = &'a &'a str>,
+) -> BTreeMap<String, OnlinePlayerInfo> {
+    let mut online_players = BTreeMap::new();
+    names.into_iter().for_each(|n| {
+        online_players.insert(n.to_string(), OnlinePlayerInfo::default());
+    });
 
-    use crate::OnlinePlayerInfo;
+    online_players
+}
 
-    use super::sanitize_for_markdown;
+#[cfg(test)]
+mod sanitize_for_markdown {
+    use super::*;
 
     #[test]
     fn sanitize_markdown() {
         let testcase = "~*`cdawg_m`>";
         assert_eq!(sanitize_for_markdown(testcase), "\\~\\*\\`cdawg\\_m\\`\\>");
     }
+}
 
-    mod content_format_mentions {
-        use super::super::format_mentions_in;
-        use minecraft_chat::{MessageBuilder, Payload};
-        use std::collections::HashMap;
-        use twilight_cache_inmemory::InMemoryCache;
-        use twilight_model::{
-            channel::{Channel, ChannelType, GuildChannel, TextChannel},
-            gateway::{event::Event, payload},
-            guild::{Permissions, Role},
-            id::{ChannelId, GuildId, RoleId, UserId},
-        };
+#[cfg(test)]
+mod content_format_mentions {
+    use twilight_gateway::Event;
+    use twilight_model::{
+        channel::{Channel, ChannelType, GuildChannel, TextChannel},
+        gateway::payload,
+        guild::{Permissions, Role},
+        id::{ChannelId, GuildId},
+    };
 
-        fn make_text_channel() -> Event {
-            Event::ChannelCreate(payload::ChannelCreate(Channel::Guild(GuildChannel::Text(
-                TextChannel {
-                    id: ChannelId(1234),
-                    guild_id: Some(GuildId(0)),
-                    kind: ChannelType::GuildText,
-                    last_message_id: None,
-                    last_pin_timestamp: None,
-                    name: "test-channel".into(),
-                    nsfw: false,
-                    permission_overwrites: vec![],
-                    parent_id: None,
-                    position: 0,
-                    rate_limit_per_user: None,
-                    topic: Some("a test channel".into()),
-                },
-            ))))
-        }
+    use super::*;
 
-        fn make_role() -> Event {
-            Event::RoleCreate(payload::RoleCreate {
-                guild_id: GuildId(0),
-                role: Role {
-                    id: RoleId(2345),
-                    color: 0,
-                    hoist: false,
-                    managed: false,
-                    mentionable: true,
-                    tags: None,
-                    name: "test-role".into(),
-                    permissions: Permissions::empty(),
-                    position: 0,
-                },
-            })
-        }
-
-        #[test]
-        fn blank_message() {
-            let msg = "";
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                InMemoryCache::new(),
-            );
-
-            assert_eq!(formatted, "");
-        }
-
-        #[test]
-        fn fake_mention() {
-            let msg = "the upcoming bracket <@thing is not a mention";
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                InMemoryCache::new(),
-            );
-
-            assert_eq!(formatted, msg);
-        }
-
-        #[test]
-        fn closing_bracket_then_start_mention() {
-            let msg = "><@!kksdk";
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                InMemoryCache::new(),
-            );
-
-            assert_eq!(formatted, msg);
-        }
-
-        #[test]
-        fn fake_mention_crazy() {
-            let msg = "<<><><@!><#><>#<>>>>";
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                InMemoryCache::new(),
-            );
-
-            assert_eq!(formatted, msg);
-        }
-
-        #[test]
-        fn fake_mention_bad_id() {
-            let msg = "<@!12notanumber>";
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                InMemoryCache::new(),
-            );
-
-            assert_eq!(formatted, msg);
-        }
-
-        #[test]
-        fn one_mention_no_info() {
-            let msg = "this has a mention: <@123>, but we're not passing mentions";
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                InMemoryCache::new(),
-            );
-
-            assert_eq!(formatted, msg);
-        }
-
-        #[test]
-        fn one_mention_with_info() {
-            let msg = "this has a mention: <@123>, and we are passing mentions";
-            let mut mentions = HashMap::new();
-            mentions.insert(UserId(123), "TestName");
-
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                mentions,
-                &[],
-                InMemoryCache::new(),
-            );
-            assert_eq!(
-                formatted,
-                "this has a mention: @TestName, and we are passing mentions"
-            );
-        }
-
-        #[test]
-        fn two_mentions_with_info() {
-            let msg = "<@123>, and even <@!321>!";
-            let mut mentions = HashMap::new();
-            mentions.insert(UserId(123), "TestName");
-            mentions.insert(UserId(321), "AnotherTest");
-
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                mentions,
-                &[],
-                InMemoryCache::new(),
-            );
-            assert_eq!(formatted, "@TestName, and even @AnotherTest!");
-        }
-
-        #[test]
-        fn three_mentions_some_with_info() {
-            let msg = "<@123>, and even <@!321>, and wow: <@3234>";
-            let mut mentions = HashMap::new();
-            mentions.insert(UserId(123), "TestName");
-            mentions.insert(UserId(3234), "WowTest");
-
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                mentions,
-                &[],
-                InMemoryCache::new(),
-            );
-            assert_eq!(formatted, "@TestName, and even <@!321>, and wow: @WowTest");
-        }
-
-        #[test]
-        fn channel_mention_no_info() {
-            let msg = "this is a channel mention: <#1234>";
-
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                InMemoryCache::new(),
-            );
-            assert_eq!(formatted, msg);
-        }
-
-        #[test]
-        fn channel_mention_with_info() {
-            let msg = "this is a channel mention: <#1234>";
-
-            let cache = InMemoryCache::new();
-            cache.update(&make_text_channel());
-
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                cache,
-            );
-            assert_eq!(formatted, "this is a channel mention: #test-channel");
-        }
-
-        #[test]
-        fn channel_mention_with_others() {
-            let msg = "<@1234> <#245> this is a channel mention: <#1234>";
-
-            let cache = InMemoryCache::new();
-            cache.update(&make_text_channel());
-
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                cache,
-            );
-            assert_eq!(
-                formatted,
-                "<@1234> <#245> this is a channel mention: #test-channel"
-            );
-        }
-
-        #[test]
-        fn role_mention_no_info() {
-            let msg = "this is a role mention: <@&2345>";
-
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                InMemoryCache::new(),
-            );
-            assert_eq!(formatted, "this is a role mention: <@&2345>");
-        }
-
-        #[test]
-        fn role_mention_with_partial_info() {
-            let msg = "this is a role mention: <@&2345>";
-
-            let cache = InMemoryCache::new();
-            cache.update(&make_role());
-
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[],
-                cache,
-            );
-            assert_eq!(formatted, msg);
-        }
-
-        #[test]
-        fn role_mention_with_info() {
-            let msg = "this is a role mention: <@&2345>";
-
-            let cache = InMemoryCache::new();
-            cache.update(&make_role());
-
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                HashMap::new(),
-                &[RoleId(2345)],
-                cache,
-            );
-            assert_eq!(formatted, "this is a role mention: @test-role");
-        }
-
-        #[test]
-        fn all_combined() {
-            let msg = "<@1212> this channel (<#1234>) is pretty cool for the role <@&2345>!";
-
-            let mut mentions = HashMap::new();
-            mentions.insert(UserId(1212), "TestName");
-
-            let cache = InMemoryCache::new();
-            cache.update(&make_role());
-            cache.update(&make_text_channel());
-
-            let (formatted, _) = format_mentions_in(
-                msg,
-                MessageBuilder::builder(Payload::text("")),
-                mentions,
-                &[RoleId(2345)],
-                cache,
-            );
-            assert_eq!(
-                formatted,
-                "@TestName this channel (#test-channel) is pretty cool for the role @test-role!"
-            );
-        }
+    fn make_text_channel() -> Event {
+        Event::ChannelCreate(payload::ChannelCreate(Channel::Guild(GuildChannel::Text(
+            TextChannel {
+                id: ChannelId(1234),
+                guild_id: Some(GuildId(0)),
+                kind: ChannelType::GuildText,
+                last_message_id: None,
+                last_pin_timestamp: None,
+                name: "test-channel".into(),
+                nsfw: false,
+                permission_overwrites: vec![],
+                parent_id: None,
+                position: 0,
+                rate_limit_per_user: None,
+                topic: Some("a test channel".into()),
+            },
+        ))))
     }
 
-    fn make_players_map<'a>(
-        names: impl IntoIterator<Item = &'a &'a str>,
-    ) -> BTreeMap<String, OnlinePlayerInfo> {
-        let mut online_players = BTreeMap::new();
-        names.into_iter().for_each(|n| {
-            online_players.insert(n.to_string(), OnlinePlayerInfo::default());
-        });
-
-        online_players
+    fn make_role() -> Event {
+        Event::RoleCreate(payload::RoleCreate {
+            guild_id: GuildId(0),
+            role: Role {
+                id: RoleId(2345),
+                color: 0,
+                hoist: false,
+                managed: false,
+                mentionable: true,
+                tags: None,
+                name: "test-role".into(),
+                permissions: Permissions::empty(),
+                position: 0,
+            },
+        })
     }
 
-    mod format_online_players_command_response {
-        use super::super::format_online_players;
+    #[test]
+    fn blank_message() {
+        let msg = "";
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            InMemoryCache::new(),
+        );
 
-        mod common {
-            use super::{super::make_players_map, *};
-            use crate::discord::util::OnlinePlayerFormat;
-
-            #[test]
-            fn markdown_in_names() {
-                let online_players = make_players_map(&["p1_", "*`p2`"]);
-                let expected = "\\*\\`p2\\` and p1\\_ are playing Minecraft";
-
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: true },
-                );
-                assert_eq!(&formatted, expected);
-
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: false },
-                );
-                assert_eq!(&formatted, expected);
-            }
-
-            #[test]
-            fn no_players() {
-                let online_players = make_players_map(&[]);
-                let expected = "Nobody is playing Minecraft";
-
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: true },
-                );
-                assert_eq!(&formatted, expected);
-
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: false },
-                );
-                assert_eq!(&formatted, expected);
-            }
-
-            #[test]
-            fn one_player() {
-                let online_players = make_players_map(&["p1"]);
-                let expected = "p1 is playing Minecraft";
-
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: true },
-                );
-                assert_eq!(&formatted, expected);
-
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: false },
-                );
-                assert_eq!(&formatted, expected);
-            }
-
-            #[test]
-            fn two_players() {
-                let online_players = make_players_map(&["p1", "p2"]);
-                let expected = "p1 and p2 are playing Minecraft";
-
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: true },
-                );
-                assert_eq!(&formatted, expected);
-
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: false },
-                );
-                assert_eq!(&formatted, expected);
-            }
-
-            #[test]
-            fn three_players() {
-                let online_players = make_players_map(&["p1", "p2", "p3"]);
-                let expected = "p1, p2, and p3 are playing Minecraft";
-
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: true },
-                );
-                assert_eq!(&formatted, expected);
-
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: false },
-                );
-                assert_eq!(&formatted, expected);
-            }
-        }
-
-        mod short {
-            use super::{super::make_players_map, *};
-            use crate::discord::util::OnlinePlayerFormat;
-
-            #[test]
-            fn four_players() {
-                let online_players = make_players_map(&["p1", "p2", "p3", "p4"]);
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: true },
-                );
-
-                assert_eq!(
-                    &formatted,
-                    "p1, p2, and p3 (+ 1 more) are playing Minecraft"
-                );
-            }
-
-            #[test]
-            fn seven_players() {
-                let online_players = make_players_map(&["p1", "p3", "p2", "p4", "p6", "p5", "p7"]);
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: true },
-                );
-
-                assert_eq!(
-                    &formatted,
-                    "p1, p2, and p3 (+ 4 more) are playing Minecraft"
-                );
-            }
-        }
-
-        mod long {
-            use super::{super::make_players_map, *};
-            use crate::discord::util::OnlinePlayerFormat;
-
-            #[test]
-            fn seven_players() {
-                let online_players = make_players_map(&["p1", "p2", "p3", "p4", "p5", "p6", "p7"]);
-                let formatted = format_online_players(
-                    &online_players,
-                    OnlinePlayerFormat::CommandResponse { short: false },
-                );
-
-                assert_eq!(
-                    &formatted,
-                    "p1, p2, p3, p4, p5, p6, and p7 are playing Minecraft"
-                );
-            }
-        }
+        assert_eq!(formatted, "");
     }
 
-    mod format_online_players_bot_status {
-        use super::make_players_map;
-        use crate::discord::util::{format_online_players, OnlinePlayerFormat};
+    #[test]
+    fn fake_mention() {
+        let msg = "the upcoming bracket <@thing is not a mention";
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            InMemoryCache::new(),
+        );
+
+        assert_eq!(formatted, msg);
+    }
+
+    #[test]
+    fn closing_bracket_then_start_mention() {
+        let msg = "><@!kksdk";
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            InMemoryCache::new(),
+        );
+
+        assert_eq!(formatted, msg);
+    }
+
+    #[test]
+    fn fake_mention_crazy() {
+        let msg = "<<><><@!><#><>#<>>>>";
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            InMemoryCache::new(),
+        );
+
+        assert_eq!(formatted, msg);
+    }
+
+    #[test]
+    fn fake_mention_bad_id() {
+        let msg = "<@!12notanumber>";
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            InMemoryCache::new(),
+        );
+
+        assert_eq!(formatted, msg);
+    }
+
+    #[test]
+    fn one_mention_no_info() {
+        let msg = "this has a mention: <@123>, but we're not passing mentions";
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            InMemoryCache::new(),
+        );
+
+        assert_eq!(formatted, msg);
+    }
+
+    #[test]
+    fn one_mention_with_info() {
+        let msg = "this has a mention: <@123>, and we are passing mentions";
+        let mut mentions = HashMap::new();
+        mentions.insert(UserId(123), "TestName");
+
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            mentions,
+            &[],
+            InMemoryCache::new(),
+        );
+        assert_eq!(
+            formatted,
+            "this has a mention: @TestName, and we are passing mentions"
+        );
+    }
+
+    #[test]
+    fn two_mentions_with_info() {
+        let msg = "<@123>, and even <@!321>!";
+        let mut mentions = HashMap::new();
+        mentions.insert(UserId(123), "TestName");
+        mentions.insert(UserId(321), "AnotherTest");
+
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            mentions,
+            &[],
+            InMemoryCache::new(),
+        );
+        assert_eq!(formatted, "@TestName, and even @AnotherTest!");
+    }
+
+    #[test]
+    fn three_mentions_some_with_info() {
+        let msg = "<@123>, and even <@!321>, and wow: <@3234>";
+        let mut mentions = HashMap::new();
+        mentions.insert(UserId(123), "TestName");
+        mentions.insert(UserId(3234), "WowTest");
+
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            mentions,
+            &[],
+            InMemoryCache::new(),
+        );
+        assert_eq!(formatted, "@TestName, and even <@!321>, and wow: @WowTest");
+    }
+
+    #[test]
+    fn channel_mention_no_info() {
+        let msg = "this is a channel mention: <#1234>";
+
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            InMemoryCache::new(),
+        );
+        assert_eq!(formatted, msg);
+    }
+
+    #[test]
+    fn channel_mention_with_info() {
+        let msg = "this is a channel mention: <#1234>";
+
+        let cache = InMemoryCache::new();
+        cache.update(&make_text_channel());
+
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            cache,
+        );
+        assert_eq!(formatted, "this is a channel mention: #test-channel");
+    }
+
+    #[test]
+    fn channel_mention_with_others() {
+        let msg = "<@1234> <#245> this is a channel mention: <#1234>";
+
+        let cache = InMemoryCache::new();
+        cache.update(&make_text_channel());
+
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            cache,
+        );
+        assert_eq!(
+            formatted,
+            "<@1234> <#245> this is a channel mention: #test-channel"
+        );
+    }
+
+    #[test]
+    fn role_mention_no_info() {
+        let msg = "this is a role mention: <@&2345>";
+
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            InMemoryCache::new(),
+        );
+        assert_eq!(formatted, "this is a role mention: <@&2345>");
+    }
+
+    #[test]
+    fn role_mention_with_partial_info() {
+        let msg = "this is a role mention: <@&2345>";
+
+        let cache = InMemoryCache::new();
+        cache.update(&make_role());
+
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[],
+            cache,
+        );
+        assert_eq!(formatted, msg);
+    }
+
+    #[test]
+    fn role_mention_with_info() {
+        let msg = "this is a role mention: <@&2345>";
+
+        let cache = InMemoryCache::new();
+        cache.update(&make_role());
+
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            HashMap::new(),
+            &[RoleId(2345)],
+            cache,
+        );
+        assert_eq!(formatted, "this is a role mention: @test-role");
+    }
+
+    #[test]
+    fn all_combined() {
+        let msg = "<@1212> this channel (<#1234>) is pretty cool for the role <@&2345>!";
+
+        let mut mentions = HashMap::new();
+        mentions.insert(UserId(1212), "TestName");
+
+        let cache = InMemoryCache::new();
+        cache.update(&make_role());
+        cache.update(&make_text_channel());
+
+        let (formatted, _) = format_mentions_in(
+            msg,
+            MessageBuilder::builder(Payload::text("")),
+            mentions,
+            &[RoleId(2345)],
+            cache,
+        );
+        assert_eq!(
+            formatted,
+            "@TestName this channel (#test-channel) is pretty cool for the role @test-role!"
+        );
+    }
+}
+
+#[cfg(test)]
+mod format_online_players_command_response {
+    use super::*;
+
+    mod common {
+        use super::*;
+
+        #[test]
+        fn markdown_in_names() {
+            let online_players = make_players_map(&["p1_", "*`p2`"]);
+            let expected = "\\*\\`p2\\` and p1\\_ are playing Minecraft";
+
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: true },
+            );
+            assert_eq!(&formatted, expected);
+
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: false },
+            );
+            assert_eq!(&formatted, expected);
+        }
+
+        #[test]
+        fn no_players() {
+            let online_players = make_players_map(&[]);
+            let expected = "Nobody is playing Minecraft";
+
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: true },
+            );
+            assert_eq!(&formatted, expected);
+
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: false },
+            );
+            assert_eq!(&formatted, expected);
+        }
 
         #[test]
         fn one_player() {
             let online_players = make_players_map(&["p1"]);
-            let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+            let expected = "p1 is playing Minecraft";
 
-            assert_eq!(&formatted, "Minecraft with p1");
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: true },
+            );
+            assert_eq!(&formatted, expected);
+
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: false },
+            );
+            assert_eq!(&formatted, expected);
         }
 
         #[test]
         fn two_players() {
             let online_players = make_players_map(&["p1", "p2"]);
-            let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+            let expected = "p1 and p2 are playing Minecraft";
 
-            assert_eq!(&formatted, "Minecraft with p1 and p2");
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: true },
+            );
+            assert_eq!(&formatted, expected);
+
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: false },
+            );
+            assert_eq!(&formatted, expected);
         }
 
         #[test]
         fn three_players() {
             let online_players = make_players_map(&["p1", "p2", "p3"]);
-            let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+            let expected = "p1, p2, and p3 are playing Minecraft";
 
-            assert_eq!(&formatted, "Minecraft with p1, p2, and p3");
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: true },
+            );
+            assert_eq!(&formatted, expected);
+
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: false },
+            );
+            assert_eq!(&formatted, expected);
         }
+    }
+
+    mod short {
+        use super::*;
 
         #[test]
         fn four_players() {
             let online_players = make_players_map(&["p1", "p2", "p3", "p4"]);
-            let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: true },
+            );
 
-            assert_eq!(&formatted, "Minecraft with p1, p2, p3, and p4");
+            assert_eq!(
+                &formatted,
+                "p1, p2, and p3 (+ 1 more) are playing Minecraft"
+            );
         }
 
         #[test]
-        fn lots_of_players() {
-            let online_players = make_players_map(&[
-                "player1", "player2", "player3", "player11", "player5", "player6", "player7",
-                "player8", "player9", "player10", "player4", "player12", "player13", "player14",
-                "player15",
-            ]);
-            let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+        fn seven_players() {
+            let online_players = make_players_map(&["p1", "p3", "p2", "p4", "p6", "p5", "p7"]);
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: true },
+            );
 
-            assert_eq!(&formatted, "Minecraft with player1, player10, player11, player12, player13, player14, player15, player2, and player3 (+ 6 more)");
-            assert!(formatted.len() <= 128);
+            assert_eq!(
+                &formatted,
+                "p1, p2, and p3 (+ 4 more) are playing Minecraft"
+            );
         }
+    }
+
+    mod long {
+        use super::*;
+
+        #[test]
+        fn seven_players() {
+            let online_players = make_players_map(&["p1", "p2", "p3", "p4", "p5", "p6", "p7"]);
+            let formatted = format_online_players(
+                &online_players,
+                OnlinePlayerFormat::CommandResponse { short: false },
+            );
+
+            assert_eq!(
+                &formatted,
+                "p1, p2, p3, p4, p5, p6, and p7 are playing Minecraft"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod format_online_players_bot_status {
+    use super::*;
+
+    #[test]
+    fn one_player() {
+        let online_players = make_players_map(&["p1"]);
+        let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+
+        assert_eq!(&formatted, "Minecraft with p1");
+    }
+
+    #[test]
+    fn two_players() {
+        let online_players = make_players_map(&["p1", "p2"]);
+        let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+
+        assert_eq!(&formatted, "Minecraft with p1 and p2");
+    }
+
+    #[test]
+    fn three_players() {
+        let online_players = make_players_map(&["p1", "p2", "p3"]);
+        let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+
+        assert_eq!(&formatted, "Minecraft with p1, p2, and p3");
+    }
+
+    #[test]
+    fn four_players() {
+        let online_players = make_players_map(&["p1", "p2", "p3", "p4"]);
+        let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+
+        assert_eq!(&formatted, "Minecraft with p1, p2, p3, and p4");
+    }
+
+    #[test]
+    fn lots_of_players() {
+        let online_players = make_players_map(&[
+            "player1", "player2", "player3", "player11", "player5", "player6", "player7",
+            "player8", "player9", "player10", "player4", "player12", "player13", "player14",
+            "player15",
+        ]);
+        let formatted = format_online_players(&online_players, OnlinePlayerFormat::BotStatus);
+
+        assert_eq!(&formatted, "Minecraft with player1, player10, player11, player12, player13, player14, player15, player2, and player3 (+ 6 more)");
+        assert!(formatted.len() <= 128);
     }
 }
