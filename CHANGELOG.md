@@ -7,6 +7,9 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 ### Internal
 
 * Updated `twilight` to 0.5
+* Updated `crossterm` to 0.20
+* Updated `textwrap` to 0.14
+* Updated other dependencies
 
 ## [alpha5] - 2021-5-24
 
