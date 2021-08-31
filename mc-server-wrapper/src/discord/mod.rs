@@ -282,17 +282,17 @@ impl DiscordBridge {
 
                     self.handle_attachments_in_msg(
                         &msg,
-                        &author_display_name,
+                        author_display_name,
                         mc_cmd_sender.clone(),
                     )
                     .await;
 
-                    self.handle_msg_content(&msg, &author_display_name, mc_cmd_sender.clone())
+                    self.handle_msg_content(&msg, author_display_name, mc_cmd_sender.clone())
                         .await;
 
                     // We handle embeds after the message contents to replicate
                     // Discord's layout (embeds after message)
-                    self.handle_embeds_in_msg(&msg, &author_display_name, mc_cmd_sender)
+                    self.handle_embeds_in_msg(&msg, author_display_name, mc_cmd_sender)
                         .await;
                 }
             }
