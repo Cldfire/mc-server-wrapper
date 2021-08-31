@@ -111,13 +111,13 @@ impl DiscordBridge {
         bridge_channel_id: ChannelId,
         allow_status_updates: bool,
     ) -> Result<(Self, Events), anyhow::Error> {
-        let client = DiscordClient::new(&token);
         let (cluster, events) = Cluster::builder(
             &token,
             Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::GUILD_MEMBERS,
         )
         .build()
         .await?;
+        let client = DiscordClient::new(token);
 
         let cluster_spawn = cluster.clone();
         tokio::spawn(async move {
@@ -485,11 +485,13 @@ impl DiscordBridge {
     ///
     /// A new task is spawned to send the message, and its `JoinHandle` is
     /// returned so its completion can be `await`ed if desired.
-    pub fn send_channel_msg<T: Into<String> + Send + 'static>(
+    pub fn send_channel_msg<T: AsRef<str> + Send + 'static>(
         self,
         text: T,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
+            let text = text.as_ref();
+
             if let Some(inner) = self.inner {
                 let content_res = inner
                     .client
@@ -498,14 +500,14 @@ impl DiscordBridge {
 
                 match content_res {
                     Ok(cm) => {
-                        if let Err(e) = cm.await {
+                        if let Err(e) = cm.exec().await {
                             warn!("Failed to send Discord message: {}", e);
                         }
                     }
                     Err(validation_err) => match validation_err.kind() {
-                        CreateMessageErrorType::ContentInvalid { content } => warn!(
+                        CreateMessageErrorType::ContentInvalid => warn!(
                             "Attempted to send invalid message to Discord, content was: {}",
-                            content
+                            text
                         ),
                         _ => warn!(
                             "Attempted to send invalid message to Discord: {}",

@@ -10,12 +10,12 @@ mc-server-wrapper-lib = { path = "../mc-server-wrapper-lib" }
 structopt = "0.3"
 tokio = { version = "1.8.1", features = ["full"] }
 futures = "0.3"
-twilight-http = "0.5"
-twilight-gateway = "0.5"
-twilight-cache-inmemory = "0.5"
-twilight-model = "0.5"
-twilight-command-parser = "0.5"
-twilight-mention = "0.5"
+twilight-http = "0.6"
+twilight-gateway = "0.6"
+twilight-cache-inmemory = "0.6"
+twilight-model = "0.6"
+twilight-command-parser = "0.6"
+twilight-mention = "0.6"
 # TODO: replace this with a crate of my own
 minecraft-chat = "0.1"
 log = "0.4"
