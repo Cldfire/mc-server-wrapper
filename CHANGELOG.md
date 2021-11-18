@@ -4,6 +4,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+## [alpha6] - 2021-11-17
+
+Small release updating some dependencies.
+
 ### Changed
 
 * The hover text for embed links in Minecraft now includes the full link URL
@@ -89,7 +93,8 @@ Small release updating some dependencies.
 
 Tagging a first alpha release after a few months of working on the project.
 
-[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha5...HEAD
+[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha6...HEAD
+[alpha6]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha5...alpha6
 [alpha5]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha4...alpha5
 [alpha4]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha3...alpha4
 [alpha3]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha2...alpha3
