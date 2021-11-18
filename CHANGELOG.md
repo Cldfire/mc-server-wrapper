@@ -16,6 +16,7 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 * Updated `textwrap` to 0.14
 * Updated `tokio` to 1.8.1
 * Updated other dependencies
+* Removed `rusty-hook` and its corresponding git hooks
 
 ## [alpha5] - 2021-5-24
 
