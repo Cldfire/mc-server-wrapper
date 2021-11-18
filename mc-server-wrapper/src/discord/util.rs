@@ -64,7 +64,7 @@ pub fn format_mentions_in<S: AsRef<str>>(
     mut message_builder: MessageBuilder,
     mentions: HashMap<UserId, &str>,
     mention_roles: &[RoleId],
-    cache: InMemoryCache,
+    cache: &InMemoryCache,
 ) -> (String, MessageBuilder) {
     // TODO: write a mc chat object crate to clean this code up
     let mut cows = vec![];
@@ -97,7 +97,7 @@ pub fn format_mentions_in<S: AsRef<str>>(
                     // with :names:
                     let cow = cache
                         .emoji(id)
-                        .map(|emoji| Cow::from(format!(":{}:", &emoji.name)))
+                        .map(|emoji| Cow::from(format!(":{}:", &emoji.name())))
                         .unwrap_or_else(|| Cow::from(raw));
 
                     message_builder = message_builder.then(Payload::text(cow.as_ref()));
@@ -321,10 +321,10 @@ mod content_format_mentions {
     use super::*;
 
     fn make_text_channel() -> Event {
-        Event::ChannelCreate(payload::ChannelCreate(Channel::Guild(GuildChannel::Text(
-            TextChannel {
-                id: ChannelId(1234),
-                guild_id: Some(GuildId(0)),
+        Event::ChannelCreate(payload::incoming::ChannelCreate(Channel::Guild(
+            GuildChannel::Text(TextChannel {
+                id: ChannelId::new(1234).unwrap(),
+                guild_id: Some(GuildId::new(1).unwrap()),
                 kind: ChannelType::GuildText,
                 last_message_id: None,
                 last_pin_timestamp: None,
@@ -335,15 +335,15 @@ mod content_format_mentions {
                 position: 0,
                 rate_limit_per_user: None,
                 topic: Some("a test channel".into()),
-            },
-        ))))
+            }),
+        )))
     }
 
     fn make_role() -> Event {
-        Event::RoleCreate(payload::RoleCreate {
-            guild_id: GuildId(0),
+        Event::RoleCreate(payload::incoming::RoleCreate {
+            guild_id: GuildId::new(1).unwrap(),
             role: Role {
-                id: RoleId(2345),
+                id: RoleId::new(2345).unwrap(),
                 color: 0,
                 hoist: false,
                 managed: false,
@@ -352,6 +352,8 @@ mod content_format_mentions {
                 name: "test-role".into(),
                 permissions: Permissions::empty(),
                 position: 0,
+                icon: None,
+                unicode_emoji: None,
             },
         })
     }
@@ -364,7 +366,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
 
         assert_eq!(formatted, "");
@@ -378,7 +380,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
 
         assert_eq!(formatted, msg);
@@ -392,7 +394,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
 
         assert_eq!(formatted, msg);
@@ -406,7 +408,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
 
         assert_eq!(formatted, msg);
@@ -420,7 +422,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
 
         assert_eq!(formatted, msg);
@@ -434,7 +436,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
 
         assert_eq!(formatted, msg);
@@ -444,14 +446,14 @@ mod content_format_mentions {
     fn one_mention_with_info() {
         let msg = "this has a mention: <@123>, and we are passing mentions";
         let mut mentions = HashMap::new();
-        mentions.insert(UserId(123), "TestName");
+        mentions.insert(UserId::new(123).unwrap(), "TestName");
 
         let (formatted, _) = format_mentions_in(
             msg,
             MessageBuilder::builder(Payload::text("")),
             mentions,
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
         assert_eq!(
             formatted,
@@ -463,15 +465,15 @@ mod content_format_mentions {
     fn two_mentions_with_info() {
         let msg = "<@123>, and even <@!321>!";
         let mut mentions = HashMap::new();
-        mentions.insert(UserId(123), "TestName");
-        mentions.insert(UserId(321), "AnotherTest");
+        mentions.insert(UserId::new(123).unwrap(), "TestName");
+        mentions.insert(UserId::new(321).unwrap(), "AnotherTest");
 
         let (formatted, _) = format_mentions_in(
             msg,
             MessageBuilder::builder(Payload::text("")),
             mentions,
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
         assert_eq!(formatted, "@TestName, and even @AnotherTest!");
     }
@@ -480,15 +482,15 @@ mod content_format_mentions {
     fn three_mentions_some_with_info() {
         let msg = "<@123>, and even <@!321>, and wow: <@3234>";
         let mut mentions = HashMap::new();
-        mentions.insert(UserId(123), "TestName");
-        mentions.insert(UserId(3234), "WowTest");
+        mentions.insert(UserId::new(123).unwrap(), "TestName");
+        mentions.insert(UserId::new(3234).unwrap(), "WowTest");
 
         let (formatted, _) = format_mentions_in(
             msg,
             MessageBuilder::builder(Payload::text("")),
             mentions,
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
         assert_eq!(formatted, "@TestName, and even <@!321>, and wow: @WowTest");
     }
@@ -502,7 +504,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
         assert_eq!(formatted, msg);
     }
@@ -519,7 +521,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            cache,
+            &cache,
         );
         assert_eq!(formatted, "this is a channel mention: #test-channel");
     }
@@ -536,7 +538,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            cache,
+            &cache,
         );
         assert_eq!(
             formatted,
@@ -553,7 +555,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            InMemoryCache::new(),
+            &InMemoryCache::new(),
         );
         assert_eq!(formatted, "this is a role mention: <@&2345>");
     }
@@ -570,7 +572,7 @@ mod content_format_mentions {
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
             &[],
-            cache,
+            &cache,
         );
         assert_eq!(formatted, msg);
     }
@@ -586,8 +588,8 @@ mod content_format_mentions {
             msg,
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
-            &[RoleId(2345)],
-            cache,
+            &[RoleId::new(2345).unwrap()],
+            &cache,
         );
         assert_eq!(formatted, "this is a role mention: @test-role");
     }
@@ -597,7 +599,7 @@ mod content_format_mentions {
         let msg = "<@1212> this channel (<#1234>) is pretty cool for the role <@&2345>!";
 
         let mut mentions = HashMap::new();
-        mentions.insert(UserId(1212), "TestName");
+        mentions.insert(UserId::new(1212).unwrap(), "TestName");
 
         let cache = InMemoryCache::new();
         cache.update(&make_role());
@@ -607,8 +609,8 @@ mod content_format_mentions {
             msg,
             MessageBuilder::builder(Payload::text("")),
             mentions,
-            &[RoleId(2345)],
-            cache,
+            &[RoleId::new(2345).unwrap()],
+            &cache,
         );
         assert_eq!(
             formatted,

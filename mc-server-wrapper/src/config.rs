@@ -3,6 +3,7 @@ use anyhow::{anyhow, Context};
 use notify::{DebouncedEvent, RecursiveMode, Watcher};
 use serde_derive::{Deserialize, Serialize};
 use std::{
+    num::NonZeroU64,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -162,7 +163,7 @@ impl Default for Minecraft {
 pub struct Discord {
     pub enable_bridge: bool,
     pub token: String,
-    pub channel_id: u64,
+    pub channel_id: NonZeroU64,
     pub update_status: bool,
 }
 
@@ -171,7 +172,7 @@ impl Default for Discord {
         Self {
             enable_bridge: false,
             token: "".into(),
-            channel_id: 0,
+            channel_id: NonZeroU64::new(123).unwrap(),
             update_status: true,
         }
     }

@@ -4,10 +4,14 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+### Changed
+
+* The hover text for embed links in Minecraft now includes the full link URL
+
 ### Internal
 
-* Updated `twilight` to 0.6
-* Updated `crossterm` to 0.21
+* Updated `twilight` to 0.7
+* Updated `crossterm` to 0.22
 * Updated `tui` to 0.16
 * Updated `textwrap` to 0.14
 * Updated `tokio` to 1.8.1

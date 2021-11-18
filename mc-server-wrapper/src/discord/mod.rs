@@ -1,6 +1,6 @@
 use log::{debug, info, warn};
 
-use twilight_cache_inmemory::{model::CachedMember, InMemoryCache, ResourceType};
+use twilight_cache_inmemory::{model::CachedMember, InMemoryCache, Reference, ResourceType};
 use twilight_command_parser::{Command, CommandParserConfig, Parser};
 use twilight_gateway::{cluster::Events, Cluster, Event};
 use twilight_http::{
@@ -9,7 +9,7 @@ use twilight_http::{
 use twilight_model::{
     channel::{message::MessageType, Message},
     gateway::{
-        payload::{RequestGuildMembers, UpdatePresence},
+        payload::outgoing::{RequestGuildMembers, UpdatePresence},
         presence::Status,
         Intents,
     },
@@ -24,8 +24,8 @@ use util::{
 };
 
 use crate::ONLINE_PLAYERS;
-use futures::{future, StreamExt};
-use std::collections::HashMap;
+use futures::StreamExt;
+use std::{collections::HashMap, num::NonZeroU64, sync::Arc};
 use tokio::sync::mpsc::Sender;
 
 mod message_span_iter;
@@ -84,20 +84,19 @@ pub async fn setup_discord(
 /// This struct can be cloned and passed around as needed.
 #[derive(Debug, Clone)]
 pub struct DiscordBridge {
-    inner: Option<DiscordBridgeInner>,
+    inner: Option<Arc<DiscordBridgeInner>>,
     /// The ID of the channel we're bridging to
     bridge_channel_id: ChannelId,
     /// If set to `false` calls to `update_status()` will be no-ops
     allow_status_updates: bool,
 }
 
-// Groups together optionally-present things
-//
-// Everything in here can be trivially cloned
-#[derive(Debug, Clone)]
+/// Groups together objects that are only available when the Discord bridge is
+/// active.
+#[derive(Debug)]
 struct DiscordBridgeInner {
     client: DiscordClient,
-    cluster: Cluster,
+    cluster: Arc<Cluster>,
     cache: InMemoryCache,
 }
 
@@ -116,9 +115,13 @@ impl DiscordBridge {
             Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::GUILD_MEMBERS,
         )
         .build()
-        .await?;
+        .await
+        .map(|(cluster, events)| (Arc::new(cluster), events))?;
+
         let client = DiscordClient::new(token);
 
+        // TODO: change this pattern up such that we no longer need to wrap the
+        // cluster in an arc
         let cluster_spawn = cluster.clone();
         tokio::spawn(async move {
             cluster_spawn.up().await;
@@ -130,11 +133,11 @@ impl DiscordBridge {
 
         Ok((
             Self {
-                inner: Some(DiscordBridgeInner {
+                inner: Some(Arc::new(DiscordBridgeInner {
                     client,
                     cluster,
                     cache,
-                }),
+                })),
                 bridge_channel_id,
                 allow_status_updates,
             },
@@ -146,19 +149,19 @@ impl DiscordBridge {
     pub fn new_noop() -> Self {
         Self {
             inner: None,
-            bridge_channel_id: ChannelId(0),
+            bridge_channel_id: ChannelId(NonZeroU64::new(1).unwrap()),
             allow_status_updates: false,
         }
     }
 
     /// Provides access to the `Cluster` inside this struct
-    pub fn cluster(&self) -> Option<Cluster> {
+    pub fn cluster(&self) -> Option<Arc<Cluster>> {
         self.inner.as_ref().map(|i| i.cluster.clone())
     }
 
     /// Provides access to the `InMemoryCache` inside this struct
-    pub fn cache(&self) -> Option<InMemoryCache> {
-        self.inner.as_ref().map(|i| i.cache.clone())
+    pub fn cache(&self) -> Option<&InMemoryCache> {
+        self.inner.as_ref().map(|i| &i.cache)
     }
 
     /// Constructs a command parser for Discord commands
@@ -173,33 +176,30 @@ impl DiscordBridge {
         Parser::new(config)
     }
 
-    /// Get cached info for the guild member specified by the given IDs
+    /// Get cached info for the guild member specified by the given IDs.
     ///
     /// `None` will be returned if the member is not present in the cache.
     //
     // TODO: previously this was used to try fetching the member info over the HTTP
     // api if the member was not cached. Unfortunately support for caching out-of-band
     // like that was removed from twilight's inmemory cache crate, so we can't do that
-    // any more.
+    // any more until it's re-added.
     //
-    // This method just exists to log failures to find requested member info in the
-    // cache for now.
-    pub async fn obtain_guild_member(
+    // This method now exists to log failures to find requested member info in the
+    // cache.
+    pub fn cached_guild_member(
         &self,
         guild_id: GuildId,
         user_id: UserId,
-    ) -> Option<CachedMember> {
-        // First check the cache
-        if let Some(cached_member) = self.cache().unwrap().member(guild_id, user_id) {
-            Some(cached_member)
-        } else {
+    ) -> Option<Reference<'_, (GuildId, UserId), CachedMember>> {
+        self.cache().unwrap().member(guild_id, user_id).or_else(|| {
             warn!(
                 "Member info for user with guild_id {} and user_id {} was not cached",
                 guild_id, user_id
             );
 
             None
-        }
+        })
     }
 
     /// Handle an event from Discord
@@ -253,12 +253,13 @@ impl DiscordBridge {
                     && !msg.author.bot
                     && msg.channel_id == self.bridge_channel_id
                 {
-                    let cached_member = self
-                        .obtain_guild_member(msg.guild_id.unwrap_or(GuildId(0)), msg.author.id)
-                        .await;
+                    let cached_member = msg
+                        .guild_id
+                        .and_then(|guild_id| self.cached_guild_member(guild_id, msg.author.id));
+
                     let author_display_name = cached_member
                         .as_ref()
-                        .and_then(|cm| cm.nick.as_ref())
+                        .and_then(|cm| cm.nick())
                         .unwrap_or(&msg.author.name);
 
                     if let Some(command) = cmd_parser.parse(&msg.content) {
@@ -351,7 +352,7 @@ impl DiscordBridge {
     /// Handles the content of the message
     ///
     /// This can only be called if `self.inner` is `Some`
-    async fn handle_msg_content(
+    async fn handle_msg_content<'a>(
         &self,
         msg: &Message,
         author_display_name: &str,
@@ -363,16 +364,22 @@ impl DiscordBridge {
         }
 
         let cache = self.cache().unwrap();
-        let guild_id = msg.guild_id.unwrap_or(GuildId(0));
 
-        // Get info about mentioned members from the cache and / or API if available
-        let cached_mentioned_members = future::join_all(
-            msg.mentions
-                .iter()
-                .map(|m| m.id)
-                .map(|id| async move { self.obtain_guild_member(guild_id, id).await }),
-        )
-        .await;
+        // Gather cached information about all guild members mentioned in the
+        // message.
+        //
+        // TODO: it might be better to just pass the cache where it's needed
+        // directly and read from it there.
+        let cached_mentioned_members = msg
+            .guild_id
+            .map(|guild_id| {
+                msg.mentions
+                    .iter()
+                    .map(|m| m.id)
+                    .map(move |id| self.cached_guild_member(guild_id, id))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         // Use the cached info to format mentions with the member's nickname if one is
         // set
@@ -381,7 +388,7 @@ impl DiscordBridge {
             mentions_map.insert(
                 mention.id,
                 cmm.as_ref()
-                    .and_then(|cm| cm.nick.as_deref())
+                    .and_then(|cm| cm.nick())
                     .unwrap_or_else(|| mention.name.as_str()),
             );
         }
@@ -398,7 +405,7 @@ impl DiscordBridge {
             tellraw_msg_builder,
             mentions_map,
             &msg.mention_roles,
-            cache.clone(),
+            cache,
         );
 
         // Tellraw commands do not get logged to the console, so we
@@ -431,21 +438,23 @@ impl DiscordBridge {
         author_display_name: &str,
         mc_cmd_sender: Sender<ServerCommand>,
     ) {
-        for embed in msg.embeds.iter().filter(|e| e.url.is_some()) {
-            // TODO: this is kinda ugly
-            let link_text = if embed.title.is_some() && embed.provider.is_some() {
-                if embed.provider.as_ref().unwrap().name.is_some() {
-                    format!(
-                        "{} - {}",
-                        embed.provider.as_ref().unwrap().name.as_ref().unwrap(),
-                        embed.title.as_ref().unwrap()
-                    )
-                } else {
-                    embed.url.clone().unwrap()
-                }
-            } else {
-                embed.url.clone().unwrap()
-            };
+        for (embed, embed_url) in msg
+            .embeds
+            .iter()
+            // Right now we only handle embeds with URLs
+            .filter_map(|e| e.url.as_ref().map(|embed_url| (e, embed_url)))
+        {
+            let link_text = embed
+                .title
+                .as_ref()
+                .zip(
+                    embed
+                        .provider
+                        .as_ref()
+                        .and_then(|provider| provider.name.as_ref()),
+                )
+                .map(|(embed_title, provider_name)| format!("{} - {}", provider_name, embed_title))
+                .unwrap_or_else(|| embed_url.clone());
 
             let tellraw_msg = tellraw_prefix()
                 .then(Payload::text(&format!("{} linked \"", author_display_name)))
@@ -455,8 +464,8 @@ impl DiscordBridge {
                 .underlined(true)
                 .italic(true)
                 .color(Color::Gray)
-                .hover_show_text("Click to open the link in your web browser")
-                .click_open_url(embed.url.as_ref().unwrap())
+                .hover_show_text(&format!("Click to open in your browser: {}", embed_url))
+                .click_open_url(embed_url)
                 .then(Payload::text("\""))
                 .italic(true)
                 .color(Color::Gray)
@@ -466,10 +475,7 @@ impl DiscordBridge {
                 ConsoleMsgType::Info,
                 format!(
                     "{}{} linked \"{}\": {}",
-                    CHAT_PREFIX,
-                    author_display_name,
-                    link_text,
-                    embed.url.as_ref().unwrap()
+                    CHAT_PREFIX, author_display_name, link_text, embed_url
                 ),
             )
             .log();
