@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 
 use anyhow::Context;
 
-use chrono::{DateTime, Utc};
 use futures::{FutureExt, StreamExt};
+use time::OffsetDateTime;
 use tokio::sync::{mpsc, Mutex};
 
 use once_cell::sync::OnceCell;
@@ -43,13 +43,13 @@ static ONLINE_PLAYERS: OnceCell<Mutex<BTreeMap<String, OnlinePlayerInfo>>> = Onc
 /// Info about online players
 #[derive(Debug)]
 pub struct OnlinePlayerInfo {
-    joined_at: DateTime<Utc>,
+    joined_at: OffsetDateTime,
 }
 
 impl Default for OnlinePlayerInfo {
     fn default() -> Self {
         Self {
-            joined_at: Utc::now(),
+            joined_at: OffsetDateTime::now_utc(),
         }
     }
 }

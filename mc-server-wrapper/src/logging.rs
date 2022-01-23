@@ -1,5 +1,6 @@
 use mc_server_wrapper_lib::CONSOLE_MSG_LOG_TARGET;
 use std::path::Path;
+use time::format_description::FormatItem;
 use tokio::sync::mpsc::Sender;
 
 pub fn setup_logger<P: AsRef<Path>>(
@@ -11,9 +12,20 @@ pub fn setup_logger<P: AsRef<Path>>(
 ) -> Result<(), fern::InitError> {
     let file_logger = fern::Dispatch::new()
         .format(|out, message, record| {
+            const LOG_TIMESTAMP_FORMAT: &[FormatItem] = time::macros::format_description!(
+                "[[[month]-[day]-[year]][[[hour repr:12 padding:none]:[minute]:[second] [period]]"
+            );
+
+            let formatted_time_now = || -> Option<String> {
+                // TODO: log errors here somehow
+                time::OffsetDateTime::now_local()
+                    .ok()
+                    .and_then(|datetime| datetime.format(&LOG_TIMESTAMP_FORMAT).ok())
+            };
+
             out.finish(format_args!(
                 "{}[{}][{}] {}",
-                chrono::Local::now().format("[%m-%d-%Y][%-I:%M:%S %p]"),
+                formatted_time_now().unwrap_or_else(|| String::from("time error")),
                 record.target(),
                 record.level(),
                 message
@@ -55,9 +67,20 @@ pub fn setup_logger<P: AsRef<Path>>(
             log::LevelFilter::Info,
         )
         .chain(fern::Output::call(move |record| {
+            const CONSOLE_TIMESTAMP_FORMAT: &[FormatItem] = time::macros::format_description!(
+                "[hour repr:12 padding:none]:[minute]:[second] [period]"
+            );
+
+            let formatted_time_now = || -> Option<String> {
+                // TODO: log errors here somehow
+                time::OffsetDateTime::now_local()
+                    .ok()
+                    .and_then(|datetime| datetime.format(&CONSOLE_TIMESTAMP_FORMAT).ok())
+            };
+
             let record = format!(
                 "[{}] [{}, {}]: {}",
-                chrono::Local::now().format("%-I:%M:%S %p"),
+                formatted_time_now().unwrap_or_else(|| String::from("time error")),
                 record.target(),
                 record.level(),
                 record.args()

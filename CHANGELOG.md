@@ -7,11 +7,14 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 ### Changed
 
 * All commands in Discord chat have been removed (aka `!mc list`). These commands need to be brought back in the future as interactions, a new Discord API feature
+* Removed all usage of the `chrono` crate and replaced it with the `time` crate for datetime operations
 
 ### Internal
 
+* Added dependency on `time` 0.3
 * Updated `twilight` to 0.9
 * Updated `tui` to 0.17
+* Removed dependency on `chrono`
 * Updated other dependencies
 
 ## [alpha6] - 2021-11-17

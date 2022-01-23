@@ -3,8 +3,8 @@ use std::{
     fmt::Display,
 };
 
-use chrono::{Duration, Local, TimeZone, Utc};
 use crossterm::event::{Event, KeyCode};
+use time::{format_description::FormatItem, Duration, OffsetDateTime, UtcOffset};
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -308,21 +308,32 @@ impl PlayersState {
         area: Rect,
         online_players: &BTreeMap<String, OnlinePlayerInfo>,
     ) {
-        let now_utc = Utc::now();
+        let now_utc = OffsetDateTime::now_utc();
 
         // TODO: doing all this work every draw for every online player is gonna
         // be bad with high player counts
         let online_players = online_players
             .iter()
             .map(|(n, info)| {
-                let local_login_time = Local.from_utc_datetime(&info.joined_at.naive_utc());
+                const LOGIN_TIME_FORMAT: &[FormatItem] =
+                    time::macros::format_description!("[hour repr:12]:[minute]:[second] [period]");
+
+                // TODO: log failure here somehow
+                let local_login_time = UtcOffset::current_local_offset()
+                    .map(|offset| info.joined_at.to_offset(offset))
+                    .ok();
 
                 let session_time = now_utc - info.joined_at;
                 let session_time_string = make_session_time_string(session_time);
 
                 [
                     n.to_string(),
-                    local_login_time.format("%r").to_string(),
+                    local_login_time
+                        .and_then(|local_login_time| {
+                            // TODO: log failure here somehow
+                            local_login_time.format(&LOGIN_TIME_FORMAT).ok()
+                        })
+                        .unwrap_or_else(|| String::from("time error")),
                     session_time_string,
                 ]
             })
@@ -351,9 +362,9 @@ impl PlayersState {
 
 fn make_session_time_string(session_duration: Duration) -> String {
     let (session_minutes, session_hours, session_days) = (
-        (session_duration - Duration::hours(session_duration.num_hours())).num_minutes(),
-        (session_duration - Duration::days(session_duration.num_days())).num_hours(),
-        session_duration.num_days(),
+        (session_duration - Duration::hours(session_duration.whole_hours())).whole_minutes(),
+        (session_duration - Duration::days(session_duration.whole_days())).whole_hours(),
+        session_duration.whole_days(),
     );
 
     if session_hours == 0 {
@@ -452,7 +463,7 @@ mod test {
     }
 
     mod session_time_string {
-        use chrono::Duration;
+        use time::Duration;
 
         use crate::ui::make_session_time_string;
 

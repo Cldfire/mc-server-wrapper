@@ -6,7 +6,11 @@ authors = ["Cldfire"]
 edition = "2018"
 
 [dependencies]
-chrono = "0.4"
+time = { version = "0.3.6", features = [
+    "local-offset",
+    "formatting",
+    "macros",
+] }
 tokio = { version = "1.15.0", features = ["full"] }
 thiserror = "1.0"
 log = "0.4"

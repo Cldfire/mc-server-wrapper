@@ -1,9 +1,8 @@
-use chrono::{offset::Local, NaiveTime};
-
 use log::log;
 
 use fmt::Display;
 use std::fmt;
+use time::{format_description::FormatItem, OffsetDateTime, Time};
 
 /// More informative representations for specific, supported console messages.
 #[derive(Debug, Clone, PartialEq)]
@@ -177,7 +176,7 @@ impl ConsoleMsgSpecific {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConsoleMsg {
-    pub timestamp: NaiveTime,
+    pub timestamp: Time,
     pub thread_name: String,
     pub msg_type: ConsoleMsgType,
     pub msg: String,
@@ -185,10 +184,17 @@ pub struct ConsoleMsg {
 
 impl fmt::Display for ConsoleMsg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        const TIMESTAMP_FORMAT: &[FormatItem] = time::macros::format_description!(
+            "[hour repr:12 padding:none]:[minute]:[second] [period]"
+        );
+
         write!(
             f,
             "[{}] [mc, {}]: {}",
-            self.timestamp.format("%-I:%M:%S %p"),
+            // TODO: log failure here somehow
+            self.timestamp
+                .format(&TIMESTAMP_FORMAT)
+                .unwrap_or_else(|_| String::from("time error")),
             self.msg_type,
             self.msg
         )
@@ -199,7 +205,10 @@ impl ConsoleMsg {
     /// Create a new `ConsoleMsg` with the current time and a blank thread name.
     pub fn new(msg_type: ConsoleMsgType, msg: String) -> Self {
         Self {
-            timestamp: Local::now().naive_local().time(),
+            // TODO: do something better than unix epoch fallback in failure case
+            timestamp: OffsetDateTime::now_local()
+                .unwrap_or(OffsetDateTime::UNIX_EPOCH)
+                .time(),
             thread_name: "".into(),
             msg_type,
             msg,
@@ -234,11 +243,13 @@ impl ConsoleMsg {
         msg_type = &msg_type[1..];
 
         Some(Self {
-            timestamp: NaiveTime::from_hms(
+            // TODO: do something better than midnight as failure fallback here
+            timestamp: Time::from_hms(
                 timestamp[..2].parse().unwrap(),
                 timestamp[3..5].parse().unwrap(),
                 timestamp[6..].parse().unwrap(),
-            ),
+            )
+            .unwrap_or(Time::MIDNIGHT),
             thread_name: thread_name.into(),
             msg_type: ConsoleMsgType::parse_from(msg_type),
             msg: remain[3..].into(),
