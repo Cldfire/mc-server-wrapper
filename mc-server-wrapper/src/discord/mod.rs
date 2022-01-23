@@ -167,6 +167,7 @@ impl DiscordBridge {
     //
     // This method now exists to log failures to find requested member info in the
     // cache.
+    #[allow(clippy::type_complexity)]
     pub fn cached_guild_member(
         &self,
         guild_id: Id<GuildMarker>,

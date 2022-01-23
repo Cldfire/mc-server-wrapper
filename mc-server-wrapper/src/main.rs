@@ -166,7 +166,7 @@ async fn main() -> Result<(), anyhow::Error> {
         {
             let online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
             // TODO: figure out what to do if the terminal fails to draw
-            let _ = terminal.draw(|mut f| tui_state.draw(&mut f, &online_players));
+            let _ = terminal.draw(|f| tui_state.draw(f, &online_players));
         }
 
         tokio::select! {

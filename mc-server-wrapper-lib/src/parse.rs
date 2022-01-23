@@ -188,7 +188,7 @@ impl fmt::Display for ConsoleMsg {
         write!(
             f,
             "[{}] [mc, {}]: {}",
-            self.timestamp.format("%-I:%M:%S %p").to_string(),
+            self.timestamp.format("%-I:%M:%S %p"),
             self.msg_type,
             self.msg
         )
