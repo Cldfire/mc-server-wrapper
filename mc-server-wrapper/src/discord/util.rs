@@ -10,7 +10,10 @@ use twilight_cache_inmemory::InMemoryCache;
 use twilight_mention::parse::MentionType;
 use twilight_model::{
     gateway::presence::{Activity, ActivityType},
-    id::{RoleId, UserId},
+    id::{
+        marker::{RoleMarker, UserMarker},
+        Id,
+    },
 };
 
 /// Returns a `MessageBuilder` with a nice prefix for Discord messages in
@@ -62,8 +65,8 @@ pub fn activity(name: String) -> Activity {
 pub fn format_mentions_in<S: AsRef<str>>(
     content: S,
     mut message_builder: MessageBuilder,
-    mentions: HashMap<UserId, &str>,
-    mention_roles: &[RoleId],
+    mentions: HashMap<Id<UserMarker>, &str>,
+    mention_roles: &[Id<RoleMarker>],
     cache: &InMemoryCache,
 ) -> (String, MessageBuilder) {
     // TODO: write a mc chat object crate to clean this code up
@@ -103,10 +106,10 @@ pub fn format_mentions_in<S: AsRef<str>>(
                     message_builder = message_builder.then(Payload::text(cow.as_ref()));
                     cows.push(cow);
                 }
-                MentionType::Role(RoleId(id)) => {
+                MentionType::Role(id) => {
                     let cow = mention_roles
                         .iter()
-                        .find(|r| id == r.0)
+                        .find(|r| r == &&id)
                         .and_then(|role_id| cache.role(*role_id))
                         .map(|role| Cow::from(format!("@{}", &role.name)))
                         .unwrap_or_else(|| Cow::from(raw));
@@ -150,6 +153,7 @@ pub fn format_mentions_in<S: AsRef<str>>(
 #[derive(Debug, Clone, Copy)]
 pub enum OnlinePlayerFormat {
     /// Format intended to be used as the response to a command
+    #[allow(unused)]
     CommandResponse {
         /// Setting this to `true` will truncate the list to 3 players
         short: bool,
@@ -315,7 +319,6 @@ mod content_format_mentions {
         channel::{Channel, ChannelType, GuildChannel, TextChannel},
         gateway::payload,
         guild::{Permissions, Role},
-        id::{ChannelId, GuildId},
     };
 
     use super::*;
@@ -323,8 +326,8 @@ mod content_format_mentions {
     fn make_text_channel() -> Event {
         Event::ChannelCreate(payload::incoming::ChannelCreate(Channel::Guild(
             GuildChannel::Text(TextChannel {
-                id: ChannelId::new(1234).unwrap(),
-                guild_id: Some(GuildId::new(1).unwrap()),
+                id: Id::new(1234),
+                guild_id: Some(Id::new(1)),
                 kind: ChannelType::GuildText,
                 last_message_id: None,
                 last_pin_timestamp: None,
@@ -341,9 +344,9 @@ mod content_format_mentions {
 
     fn make_role() -> Event {
         Event::RoleCreate(payload::incoming::RoleCreate {
-            guild_id: GuildId::new(1).unwrap(),
+            guild_id: Id::new(1),
             role: Role {
-                id: RoleId::new(2345).unwrap(),
+                id: Id::new(2345),
                 color: 0,
                 hoist: false,
                 managed: false,
@@ -446,7 +449,7 @@ mod content_format_mentions {
     fn one_mention_with_info() {
         let msg = "this has a mention: <@123>, and we are passing mentions";
         let mut mentions = HashMap::new();
-        mentions.insert(UserId::new(123).unwrap(), "TestName");
+        mentions.insert(Id::new(123), "TestName");
 
         let (formatted, _) = format_mentions_in(
             msg,
@@ -465,8 +468,8 @@ mod content_format_mentions {
     fn two_mentions_with_info() {
         let msg = "<@123>, and even <@!321>!";
         let mut mentions = HashMap::new();
-        mentions.insert(UserId::new(123).unwrap(), "TestName");
-        mentions.insert(UserId::new(321).unwrap(), "AnotherTest");
+        mentions.insert(Id::new(123), "TestName");
+        mentions.insert(Id::new(321), "AnotherTest");
 
         let (formatted, _) = format_mentions_in(
             msg,
@@ -482,8 +485,8 @@ mod content_format_mentions {
     fn three_mentions_some_with_info() {
         let msg = "<@123>, and even <@!321>, and wow: <@3234>";
         let mut mentions = HashMap::new();
-        mentions.insert(UserId::new(123).unwrap(), "TestName");
-        mentions.insert(UserId::new(3234).unwrap(), "WowTest");
+        mentions.insert(Id::new(123), "TestName");
+        mentions.insert(Id::new(3234), "WowTest");
 
         let (formatted, _) = format_mentions_in(
             msg,
@@ -588,7 +591,7 @@ mod content_format_mentions {
             msg,
             MessageBuilder::builder(Payload::text("")),
             HashMap::new(),
-            &[RoleId::new(2345).unwrap()],
+            &[Id::new(2345)],
             &cache,
         );
         assert_eq!(formatted, "this is a role mention: @test-role");
@@ -599,7 +602,7 @@ mod content_format_mentions {
         let msg = "<@1212> this channel (<#1234>) is pretty cool for the role <@&2345>!";
 
         let mut mentions = HashMap::new();
-        mentions.insert(UserId::new(1212).unwrap(), "TestName");
+        mentions.insert(Id::new(1212), "TestName");
 
         let cache = InMemoryCache::new();
         cache.update(&make_role());
@@ -609,7 +612,7 @@ mod content_format_mentions {
             msg,
             MessageBuilder::builder(Payload::text("")),
             mentions,
-            &[RoleId::new(2345).unwrap()],
+            &[Id::new(2345)],
             &cache,
         );
         assert_eq!(

@@ -9,8 +9,6 @@ use tokio::sync::{mpsc, Mutex};
 use once_cell::sync::OnceCell;
 use scopeguard::defer;
 
-use twilight_model::id::ChannelId;
-
 use mc_server_wrapper_lib::{
     communication::*, parse::*, McServerConfig, McServerManager, CONSOLE_MSG_LOG_TARGET,
 };
@@ -143,7 +141,7 @@ async fn main() -> Result<(), anyhow::Error> {
         if discord_config.enable_bridge {
             setup_discord(
                 discord_config.token,
-                ChannelId(discord_config.channel_id),
+                discord_config.channel_id.into(),
                 mc_cmd_sender.clone(),
                 discord_config.update_status,
             )

@@ -1,11 +1,8 @@
 use log::{debug, info, warn};
 
 use twilight_cache_inmemory::{model::CachedMember, InMemoryCache, Reference, ResourceType};
-use twilight_command_parser::{Command, CommandParserConfig, Parser};
 use twilight_gateway::{cluster::Events, Cluster, Event};
-use twilight_http::{
-    request::prelude::create_message::CreateMessageErrorType, Client as DiscordClient,
-};
+use twilight_http::Client as DiscordClient;
 use twilight_model::{
     channel::{message::MessageType, Message},
     gateway::{
@@ -13,19 +10,19 @@ use twilight_model::{
         presence::Status,
         Intents,
     },
-    id::{ChannelId, GuildId, UserId},
+    id::{
+        marker::{ChannelMarker, GuildMarker, UserMarker},
+        Id,
+    },
 };
 
 use mc_server_wrapper_lib::{communication::*, parse::*};
 use minecraft_chat::{Color, Payload};
 
-use util::{
-    activity, format_mentions_in, format_online_players, tellraw_prefix, OnlinePlayerFormat,
-};
+use util::{activity, format_mentions_in, tellraw_prefix};
 
-use crate::ONLINE_PLAYERS;
 use futures::StreamExt;
-use std::{collections::HashMap, num::NonZeroU64, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc::Sender;
 
 mod message_span_iter;
@@ -39,7 +36,7 @@ static CHAT_PREFIX: &str = "[D] ";
 /// will be no-ops
 pub async fn setup_discord(
     token: String,
-    bridge_channel_id: ChannelId,
+    bridge_channel_id: Id<ChannelMarker>,
     mc_cmd_sender: Sender<ServerCommand>,
     allow_status_updates: bool,
 ) -> Result<DiscordBridge, anyhow::Error> {
@@ -50,23 +47,18 @@ pub async fn setup_discord(
     let discord_clone = discord.clone();
     tokio::spawn(async move {
         let discord = discord_clone;
-        let cmd_parser = DiscordBridge::command_parser();
 
         // For all received Discord events, map the event to a `ServerCommand`
         // (if necessary) and send it to the Minecraft server
         while let Some(e) = events.next().await {
             let discord = discord.clone();
             let cmd_sender_clone = mc_cmd_sender.clone();
-            let cmd_parser_clone = cmd_parser.clone();
 
             // Update the cache
             discord.inner.as_ref().unwrap().cache.update(&e.1);
 
             tokio::spawn(async move {
-                if let Err(e) = discord
-                    .handle_discord_event(e, cmd_parser_clone, cmd_sender_clone)
-                    .await
-                {
+                if let Err(e) = discord.handle_discord_event(e, cmd_sender_clone).await {
                     warn!("Failed to handle Discord event: {}", e);
                 }
             });
@@ -86,7 +78,7 @@ pub async fn setup_discord(
 pub struct DiscordBridge {
     inner: Option<Arc<DiscordBridgeInner>>,
     /// The ID of the channel we're bridging to
-    bridge_channel_id: ChannelId,
+    bridge_channel_id: Id<ChannelMarker>,
     /// If set to `false` calls to `update_status()` will be no-ops
     allow_status_updates: bool,
 }
@@ -107,11 +99,11 @@ impl DiscordBridge {
     /// will be no-ops.
     pub async fn new(
         token: String,
-        bridge_channel_id: ChannelId,
+        bridge_channel_id: Id<ChannelMarker>,
         allow_status_updates: bool,
     ) -> Result<(Self, Events), anyhow::Error> {
         let (cluster, events) = Cluster::builder(
-            &token,
+            token.clone(),
             Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::GUILD_MEMBERS,
         )
         .build()
@@ -149,7 +141,7 @@ impl DiscordBridge {
     pub fn new_noop() -> Self {
         Self {
             inner: None,
-            bridge_channel_id: ChannelId(NonZeroU64::new(1).unwrap()),
+            bridge_channel_id: Id::new(1),
             allow_status_updates: false,
         }
     }
@@ -162,18 +154,6 @@ impl DiscordBridge {
     /// Provides access to the `InMemoryCache` inside this struct
     pub fn cache(&self) -> Option<&InMemoryCache> {
         self.inner.as_ref().map(|i| &i.cache)
-    }
-
-    /// Constructs a command parser for Discord commands
-    pub fn command_parser<'a>() -> Parser<'a> {
-        let mut config = CommandParserConfig::new();
-
-        config.add_command("list", false);
-
-        // TODO: make this configurable
-        config.add_prefix("!mc ");
-
-        Parser::new(config)
     }
 
     /// Get cached info for the guild member specified by the given IDs.
@@ -189,9 +169,9 @@ impl DiscordBridge {
     // cache.
     pub fn cached_guild_member(
         &self,
-        guild_id: GuildId,
-        user_id: UserId,
-    ) -> Option<Reference<'_, (GuildId, UserId), CachedMember>> {
+        guild_id: Id<GuildMarker>,
+        user_id: Id<UserMarker>,
+    ) -> Option<Reference<'_, (Id<GuildMarker>, Id<UserMarker>), CachedMember>> {
         self.cache().unwrap().member(guild_id, user_id).or_else(|| {
             warn!(
                 "Member info for user with guild_id {} and user_id {} was not cached",
@@ -210,7 +190,6 @@ impl DiscordBridge {
     pub async fn handle_discord_event(
         &self,
         event: (u64, Event),
-        cmd_parser: Parser<'_>,
         mc_cmd_sender: Sender<ServerCommand>,
     ) -> Result<(), anyhow::Error> {
         match event {
@@ -261,25 +240,6 @@ impl DiscordBridge {
                         .as_ref()
                         .and_then(|cm| cm.nick())
                         .unwrap_or(&msg.author.name);
-
-                    if let Some(command) = cmd_parser.parse(&msg.content) {
-                        match command {
-                            Command { name: "list", .. } => {
-                                let response = {
-                                    let online_players = ONLINE_PLAYERS.get().unwrap().lock().await;
-                                    format_online_players(
-                                        &online_players,
-                                        OnlinePlayerFormat::CommandResponse { short: false },
-                                    )
-                                };
-
-                                self.clone().send_channel_msg(response);
-                            }
-                            _ => {}
-                        }
-
-                        return Ok(());
-                    }
 
                     self.handle_attachments_in_msg(
                         &msg,
@@ -510,16 +470,10 @@ impl DiscordBridge {
                             warn!("Failed to send Discord message: {}", e);
                         }
                     }
-                    Err(validation_err) => match validation_err.kind() {
-                        CreateMessageErrorType::ContentInvalid => warn!(
-                            "Attempted to send invalid message to Discord, content was: {}",
-                            text
-                        ),
-                        _ => warn!(
-                            "Attempted to send invalid message to Discord: {}",
-                            validation_err
-                        ),
-                    },
+                    Err(validation_err) => warn!(
+                        "Validation error while attempting to send message to channel: {}",
+                        validation_err
+                    ),
                 }
             }
         })

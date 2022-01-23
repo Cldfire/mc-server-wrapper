@@ -1,5 +1,7 @@
+use std::num::NonZeroU64;
+
 use twilight_mention::parse::MentionType;
-use twilight_model::id::{ChannelId, EmojiId, RoleId, UserId};
+use twilight_model::id::Id;
 
 trait MentionTypeExt: Sized {
     fn try_parse(buf: &str) -> Option<Self>;
@@ -13,13 +15,19 @@ impl MentionTypeExt for MentionType {
     fn try_parse(buf: &str) -> Option<Self> {
         if let Some(buf) = buf.strip_prefix("@!") {
             // Parse user ID
-            buf.parse().ok().map(|n| Self::User(UserId(n)))
+            buf.parse::<NonZeroU64>()
+                .ok()
+                .map(|n| Self::User(Id::from(n)))
         } else if let Some(buf) = buf.strip_prefix("@&") {
             // Parse role ID
-            buf.parse().ok().map(|n| Self::Role(RoleId(n)))
+            buf.parse::<NonZeroU64>()
+                .ok()
+                .map(|n| Self::Role(Id::from(n)))
         } else if let Some(buf) = buf.strip_prefix('@') {
             // Parse user ID
-            buf.parse().ok().map(|n| Self::User(UserId(n)))
+            buf.parse::<NonZeroU64>()
+                .ok()
+                .map(|n| Self::User(Id::from(n)))
         } else if let Some(buf) = buf.strip_prefix(':') {
             // Parse emoji ID (looks like "<:name:123>")
             //
@@ -27,11 +35,13 @@ impl MentionTypeExt for MentionType {
             buf.find(':')
                 // Skip past the second : to get to the ID
                 .and_then(|idx| buf.get(idx + 1..))
-                .and_then(|s| s.parse().ok())
-                .map(|n| Self::Emoji(EmojiId(n)))
+                .and_then(|s| s.parse::<NonZeroU64>().ok())
+                .map(|n| Self::Emoji(Id::from(n)))
         } else if let Some(buf) = buf.strip_prefix('#') {
             // Parse channel ID
-            buf.parse().ok().map(|n| Self::Channel(ChannelId(n)))
+            buf.parse::<NonZeroU64>()
+                .ok()
+                .map(|n| Self::Channel(Id::from(n)))
         } else {
             None
         }
@@ -146,9 +156,7 @@ mod test {
                     ),
                     Mention(
                         Channel(
-                            ChannelId(
-                                12,
-                            ),
+                            Id<ChannelMarker>(12),
                         ),
                         "<#12>",
                     ),
@@ -157,9 +165,7 @@ mod test {
                     ),
                     Mention(
                         Emoji(
-                            EmojiId(
-                                34,
-                            ),
+                            Id<EmojiMarker>(34),
                         ),
                         "<:name:34>",
                     ),
@@ -168,9 +174,7 @@ mod test {
                     ),
                     Mention(
                         Role(
-                            RoleId(
-                                56,
-                            ),
+                            Id<RoleMarker>(56),
                         ),
                         "<@&56>",
                     ),
@@ -179,9 +183,7 @@ mod test {
                     ),
                     Mention(
                         User(
-                            UserId(
-                                78,
-                            ),
+                            Id<UserMarker>(78),
                         ),
                         "<@78>",
                     ),

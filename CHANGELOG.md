@@ -4,8 +4,13 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+### Changed
+
+* All commands in Discord chat have been removed (aka `!mc list`). These commands need to be brought back in the future as interactions, a new Discord API feature
+
 ### Internal
 
+* Updated `twilight` to 0.9
 * Updated `tui` to 0.17
 * Updated other dependencies
 
