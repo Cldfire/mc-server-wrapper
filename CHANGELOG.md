@@ -14,6 +14,8 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 * Added dependency on `time` 0.3
 * Updated `twilight` to 0.9
 * Updated `tui` to 0.17
+* Updated `crostterm` to 0.23.1
+* Updated `textwrap` to 0.15
 * Removed dependency on `chrono`
 * Updated other dependencies
 
