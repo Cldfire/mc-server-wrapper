@@ -88,8 +88,11 @@ discord = "Info"
 ### Discord bridge setup
 
 * Register an application and a bot with [Discord](https://discordapp.com/developers/applications)
-* Toggle `Server Members Intent` to on under `Privileged Gateway Intents`
-  * This is used to receive member updates from your guild (such as when someone changes their nickname so we can change the name we display in-game)
+* Enable some things in the `Privileged Gateway Intents` section of the bot's admin portal
+    * Toggle `Server Members Intent` on
+        * This is used to receive member updates from your guild (such as when someone changes their nickname so we can change the name we display in-game)
+    * Toggle `Message Content Intent` on
+        * This is used to receive messsage content from the channel for the chat bridge in Discord so we can relay chat there into Minecraft
 * Add the bot to the guild you want to bridge to
 * Get the ID of the channel you want to bridge to (Google this for instructions)
 * Provide the bot token and channel ID in the config file

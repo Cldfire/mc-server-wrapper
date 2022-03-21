@@ -104,7 +104,10 @@ impl DiscordBridge {
     ) -> Result<(Self, Events), anyhow::Error> {
         let (cluster, events) = Cluster::builder(
             token.clone(),
-            Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::GUILD_MEMBERS,
+            Intents::GUILDS
+                | Intents::GUILD_MESSAGES
+                | Intents::GUILD_MEMBERS
+                | Intents::MESSAGE_CONTENT,
         )
         .build()
         .await
@@ -203,8 +206,8 @@ impl DiscordBridge {
                 if let Some(channel_name) = guild
                     .channels
                     .iter()
-                    .find(|c| c.id() == self.bridge_channel_id)
-                    .map(|c| c.name())
+                    .find(|c| c.id == self.bridge_channel_id)
+                    .and_then(|c| c.name.as_ref())
                 {
                     info!(
                         "Connected to guild '{}', bridging chat to '#{}'",
@@ -350,7 +353,7 @@ impl DiscordBridge {
                 mention.id,
                 cmm.as_ref()
                     .and_then(|cm| cm.nick())
-                    .unwrap_or_else(|| mention.name.as_str()),
+                    .unwrap_or(mention.name.as_str()),
             );
         }
 

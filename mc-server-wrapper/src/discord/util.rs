@@ -83,8 +83,13 @@ pub fn format_mentions_in<S: AsRef<str>>(
             MessageSpan::Mention(mention_type, raw) => match mention_type {
                 MentionType::Channel(id) => {
                     let cow = cache
-                        .guild_channel(id)
-                        .map(|channel| Cow::from(format!("#{}", channel.name())))
+                        .channel(id)
+                        .and_then(|channel| {
+                            channel
+                                .name
+                                .as_ref()
+                                .map(|channel_name| Cow::from(format!("#{}", channel_name)))
+                        })
                         // Throughout this function we fallback to the raw, unformatted
                         // text if we're unable to fetch relevant info from the cache
                         .unwrap_or_else(|| Cow::from(raw));
@@ -316,7 +321,7 @@ mod sanitize_for_markdown {
 mod content_format_mentions {
     use twilight_gateway::Event;
     use twilight_model::{
-        channel::{Channel, ChannelType, GuildChannel, TextChannel},
+        channel::{Channel, ChannelType},
         gateway::payload,
         guild::{Permissions, Role},
     };
@@ -324,22 +329,35 @@ mod content_format_mentions {
     use super::*;
 
     fn make_text_channel() -> Event {
-        Event::ChannelCreate(payload::incoming::ChannelCreate(Channel::Guild(
-            GuildChannel::Text(TextChannel {
-                id: Id::new(1234),
-                guild_id: Some(Id::new(1)),
-                kind: ChannelType::GuildText,
-                last_message_id: None,
-                last_pin_timestamp: None,
-                name: "test-channel".into(),
-                nsfw: false,
-                permission_overwrites: vec![],
-                parent_id: None,
-                position: 0,
-                rate_limit_per_user: None,
-                topic: Some("a test channel".into()),
-            }),
-        )))
+        Event::ChannelCreate(Box::new(payload::incoming::ChannelCreate(Channel {
+            application_id: None,
+            bitrate: None,
+            default_auto_archive_duration: None,
+            guild_id: Some(Id::new(1)),
+            icon: None,
+            id: Id::new(1234),
+            invitable: None,
+            kind: ChannelType::GuildText,
+            last_message_id: None,
+            last_pin_timestamp: None,
+            member: None,
+            member_count: None,
+            message_count: None,
+            name: Some("test-channel".into()),
+            newly_created: None,
+            nsfw: None,
+            owner_id: None,
+            parent_id: None,
+            permission_overwrites: None,
+            position: None,
+            rate_limit_per_user: None,
+            recipients: None,
+            rtc_region: None,
+            thread_metadata: None,
+            topic: None,
+            user_limit: None,
+            video_quality_mode: None,
+        })))
     }
 
     fn make_role() -> Event {

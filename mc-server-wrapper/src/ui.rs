@@ -217,7 +217,7 @@ impl LogsState {
                 .iter_mut()
                 // Only wrap the records we could potentially be displaying
                 .skip(num_records.saturating_sub(available_lines))
-                .map(|r| {
+                .flat_map(|r| {
                     // See if we can use a cached wrapped line
                     if let Some(wrapped) = &r.1 {
                         if wrapped.1 as usize == logs_area_width {
@@ -239,8 +239,7 @@ impl LogsState {
 
                     wrapped_lines_len += r.1.as_ref().unwrap().0.len();
                     r.1.as_ref().unwrap().0.clone()
-                })
-                .flatten(),
+                }),
         );
 
         if self.progress_bar.is_some() {
