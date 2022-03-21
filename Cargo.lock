@@ -753,7 +753,7 @@ checksum = "a3e378b66a060d48947b590737b30a1be76706c8dd7b8ba0f2fe3989c68a853f"
 
 [[package]]
 name = "mc-server-wrapper"
-version = "0.1.0-alpha6"
+version = "0.1.0-alpha7"
 dependencies = [
  "anyhow",
  "crossterm 0.23.1",

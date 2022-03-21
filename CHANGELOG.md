@@ -4,6 +4,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+## [alpha7] - 2022-3-21
+
+Small release updating some dependencies.
+
 ### Changed
 
 * All commands in Discord chat have been removed (aka `!mc list`). These commands need to be brought back in the future as interactions, a new Discord API feature
@@ -108,7 +112,8 @@ Small release updating some dependencies.
 
 Tagging a first alpha release after a few months of working on the project.
 
-[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha6...HEAD
+[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha7...HEAD
+[alpha7]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha6...alpha7
 [alpha6]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha5...alpha6
 [alpha5]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha4...alpha5
 [alpha4]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha3...alpha4
