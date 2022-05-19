@@ -4,6 +4,11 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+### Internal
+
+* Updated `tui` to 0.18
+* Updated other dependencies
+
 ## [alpha7] - 2022-3-21
 
 Small release updating some dependencies.
