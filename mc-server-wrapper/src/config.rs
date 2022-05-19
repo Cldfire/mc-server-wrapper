@@ -74,8 +74,7 @@ impl Config {
             .await
             .with_context(|| format!("Failed to open config file at {:?}", path))?;
 
-        file
-            .write_all(toml::to_string(self)?.as_bytes())
+        file.write_all(toml::to_string(self)?.as_bytes())
             .await
             .with_context(|| format!("Failed to write config file to {:?}", path))
     }
