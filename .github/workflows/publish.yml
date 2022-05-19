@@ -17,7 +17,7 @@ jobs:
             asset_name: mc-server-wrapper-linux-amd64
           - os: windows-latest
             artifact_name: mc-server-wrapper.exe
-            asset_name: mc-server-wrapper-windows-amd64
+            asset_name: mc-server-wrapper-windows-amd64.exe
           - os: macos-latest
             artifact_name: mc-server-wrapper
             asset_name: mc-server-wrapper-macos-amd64
