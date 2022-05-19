@@ -28,7 +28,7 @@ fn player_login() {
             assert_eq!(name, "Cldfire");
             assert_eq!(ip, "127.0.0.1:56538");
             assert_eq!(entity_id, 97);
-            assert_eq!(coords, (8185.897723692287, 65.0, -330.1145592972985));
+            assert_eq!(coords, (8_185.898, 65.0, -330.114_56));
             assert_eq!(world.unwrap(), "world");
         }
         _ => unreachable!(),

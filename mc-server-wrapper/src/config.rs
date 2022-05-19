@@ -74,10 +74,10 @@ impl Config {
             .await
             .with_context(|| format!("Failed to open config file at {:?}", path))?;
 
-        Ok(file
+        file
             .write_all(toml::to_string(self)?.as_bytes())
             .await
-            .with_context(|| format!("Failed to write config file to {:?}", path))?)
+            .with_context(|| format!("Failed to write config file to {:?}", path))
     }
 
     /// Merge args passed in via the CLI into this config
