@@ -6,6 +6,7 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ### Internal
 
+* Updated `twilight` to 0.11
 * Updated `tui` to 0.18
 * Updated other dependencies
 
