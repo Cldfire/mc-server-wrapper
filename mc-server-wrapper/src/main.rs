@@ -35,6 +35,8 @@ mod discord;
 mod logging;
 mod ui;
 
+static APPLICATION_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// Maintains a hashset of players currently on the Minecraft server
 ///
 /// Player name -> info
@@ -69,6 +71,10 @@ pub struct Opt {
     #[structopt(short = "g", long)]
     gen_config: bool,
 
+    /// Print application version and then exit the program
+    #[structopt(short = "V", long)]
+    version: bool,
+
     /// Path to the Minecraft server jar
     #[structopt(parse(from_os_str))]
     server_path: Option<PathBuf>,
@@ -90,6 +96,11 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut notify_receiver = config.setup_watcher(config_filepath.clone());
 
     if opt.gen_config {
+        return Ok(());
+    }
+
+    if opt.version {
+        println!("mc-server-wrapper {APPLICATION_VERSION}");
         return Ok(());
     }
 

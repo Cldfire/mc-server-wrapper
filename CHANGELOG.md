@@ -4,6 +4,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+## Added
+
+* `--version` flag for checking the application version
+
 ### Internal
 
 * Updated `twilight` to 0.11
