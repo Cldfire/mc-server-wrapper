@@ -2,10 +2,10 @@ use crate::OnlinePlayerInfo;
 
 use super::{message_span_iter::MessageSpan, CHAT_PREFIX};
 use minecraft_chat::{Color, MessageBuilder, Payload};
-use std::fmt::Write as _;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
+    fmt::Write as _,
 };
 use twilight_cache_inmemory::InMemoryCache;
 use twilight_mention::parse::MentionType;
