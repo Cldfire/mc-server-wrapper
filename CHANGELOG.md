@@ -11,7 +11,7 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 ### Internal
 
 * Updated `twilight` to 0.13
-* Updated `tui` to 0.18
+* Updated `tui` to 0.19
 * Updated `crossterm` to 0.25.0
 * Updated other dependencies
 
