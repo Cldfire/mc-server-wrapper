@@ -63,10 +63,10 @@ impl TuiState {
     /// Update the state based on the given input
     // TODO: make input dispatch more generic
     pub fn handle_input(&mut self, event: Event) {
-        self.tab_state.handle_input(event);
+        self.tab_state.handle_input(&event);
         match self.tab_state.current_idx {
-            0 => self.logs_state.handle_input(event),
-            1 => self.players_state.handle_input(event),
+            0 => self.logs_state.handle_input(&event),
+            1 => self.players_state.handle_input(&event),
             _ => unreachable!(),
         }
     }
@@ -105,7 +105,7 @@ impl TabsState {
     }
 
     /// Update the state based on the given input
-    fn handle_input(&mut self, event: Event) {
+    fn handle_input(&mut self, event: &Event) {
         if let Event::Key(key_event) = event {
             if key_event.code == KeyCode::Tab {
                 self.next();
@@ -265,7 +265,7 @@ impl LogsState {
     }
 
     /// Update the state based on the given input
-    fn handle_input(&mut self, event: Event) {
+    fn handle_input(&mut self, event: &Event) {
         self.input_state.handle_input(event);
     }
 
@@ -356,7 +356,7 @@ impl PlayersState {
     }
 
     /// Update the state based on the given input
-    fn handle_input(&mut self, _event: Event) {}
+    fn handle_input(&mut self, _event: &Event) {}
 }
 
 fn make_session_time_string(session_duration: Duration) -> String {
@@ -396,7 +396,7 @@ impl InputState {
     }
 
     /// Update the state based on the given input
-    fn handle_input(&mut self, event: Event) {
+    fn handle_input(&mut self, event: &Event) {
         if let Event::Key(key_event) = event {
             match key_event.code {
                 KeyCode::Char(c) => self.value.push(c),
