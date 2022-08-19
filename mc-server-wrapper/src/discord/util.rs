@@ -2,6 +2,7 @@ use crate::OnlinePlayerInfo;
 
 use super::{message_span_iter::MessageSpan, CHAT_PREFIX};
 use minecraft_chat::{Color, MessageBuilder, Payload};
+use std::fmt::Write as _;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
@@ -256,7 +257,7 @@ pub fn format_online_players(
                     string.push_str(&online_players_vec[i]);
                     i += 1;
 
-                    string.push_str(&format!(" (+ {} more)", online_players_vec.len() - i));
+                    let _ = write!(string, " (+ {} more)", online_players_vec.len() - i);
                 }
 
                 string
@@ -274,7 +275,7 @@ fn online_players_list(online_players: &[String], short: bool) -> String {
         );
 
         if online_players.len() > 3 {
-            string.push_str(&format!(" (+ {} more)", online_players.len() - 3));
+            let _ = write!(string, " (+ {} more)", online_players.len() - 3);
         }
 
         string
@@ -282,10 +283,10 @@ fn online_players_list(online_players: &[String], short: bool) -> String {
         let mut string = String::new();
 
         for player in online_players[..online_players.len() - 1].iter() {
-            string.push_str(&format!("{}, ", player));
+            let _ = write!(string, "{}, ", player);
         }
 
-        string.push_str(&format!("and {}", online_players.last().unwrap()));
+        let _ = write!(string, "and {}", online_players.last().unwrap());
         string
     }
 }

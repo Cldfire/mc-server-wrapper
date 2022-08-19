@@ -156,13 +156,13 @@ impl McServerManager {
 
                 match cmd {
                     TellRawAll(json) => {
-                        let _ = self.write_to_stdin(format!("tellraw @a {}\n", json)).await;
+                        self.write_to_stdin(format!("tellraw @a {}\n", json)).await;
                     }
                     WriteCommandToStdin(text) => {
-                        let _ = self.write_to_stdin(text + "\n").await;
+                        self.write_to_stdin(text + "\n").await;
                     }
                     WriteToStdin(text) => {
-                        let _ = self.write_to_stdin(text).await;
+                        self.write_to_stdin(text).await;
                     }
 
                     AgreeToEula => {
@@ -233,7 +233,7 @@ impl McServerManager {
                     }
                     StopServer { forever } => {
                         // TODO: handle error
-                        let _ = self.write_to_stdin("stop\n").await;
+                        self.write_to_stdin("stop\n").await;
 
                         if forever {
                             break;

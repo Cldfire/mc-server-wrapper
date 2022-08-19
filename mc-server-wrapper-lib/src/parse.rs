@@ -174,7 +174,7 @@ impl ConsoleMsgSpecific {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConsoleMsg {
     pub timestamp: Time,
     pub thread_name: String,
@@ -258,7 +258,7 @@ impl ConsoleMsg {
 }
 
 /// Various types of console messages that can occur
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ConsoleMsgType {
     Info,
     Warn,
