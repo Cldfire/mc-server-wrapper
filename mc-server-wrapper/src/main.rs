@@ -25,7 +25,6 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
-use notify::DebouncedEvent;
 use structopt::StructOpt;
 use tui::{backend::CrosstermBackend, Terminal};
 use util::{format_online_players, OnlinePlayerFormat};
@@ -379,13 +378,11 @@ async fn main() -> Result<(), anyhow::Error> {
             },
             config_file_event = notify_receiver.recv() => {
                 match config_file_event {
+                    // this currently is not used for anything, it's here
+                    // for future use
                     Some(event) => match event {
-                        DebouncedEvent::Write(path) => {
-                            // this currently is not used for anything, it's here
-                            // for future use
-                            debug!("The config file was changed, path: {:?}", path);
-                        },
-                        _ => debug!("Received non-applicable file watch event")
+                        Ok(_events) => debug!("Events fired for config file at path"),
+                        Err(_errors) => debug!("Received errors from config file watcher"),
                     },
                     // TODO: should we break or panic in these cases?
                     None => unreachable!()

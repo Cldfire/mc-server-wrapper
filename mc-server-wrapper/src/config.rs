@@ -1,6 +1,6 @@
 use crate::Opt;
 use anyhow::{anyhow, Context};
-use notify::{DebouncedEvent, RecursiveMode, Watcher};
+use notify_debouncer_mini::{new_debouncer, notify, DebouncedEvent};
 use serde_derive::{Deserialize, Serialize};
 use std::{
     num::NonZeroU64,
@@ -14,7 +14,7 @@ use tokio::{
 };
 
 /// Represents the mc-server-wrapper config structure
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     /// Minecraft-related config options
     pub minecraft: Minecraft,
@@ -106,18 +106,19 @@ impl Config {
     pub fn setup_watcher(
         &self,
         config_filepath: impl Into<PathBuf>,
-    ) -> mpsc::Receiver<DebouncedEvent> {
+    ) -> mpsc::Receiver<Result<Vec<DebouncedEvent>, Vec<notify::Error>>> {
         let (notify_sender, notify_receiver) = mpsc::channel(8);
         let config_filepath = config_filepath.into();
         let handle = tokio::runtime::Handle::current();
 
         std::thread::spawn(move || {
             let (tx, rx) = std::sync::mpsc::channel();
-            let mut watcher = notify::watcher(tx, Duration::from_millis(300)).unwrap();
 
-            // Watch for changes to config file
-            watcher
-                .watch(&config_filepath, RecursiveMode::NonRecursive)
+            let mut debouncer = new_debouncer(Duration::from_millis(500), None, tx).unwrap();
+
+            debouncer
+                .watcher()
+                .watch(&config_filepath, notify::RecursiveMode::NonRecursive)
                 .unwrap();
 
             loop {
@@ -137,7 +138,7 @@ impl Config {
 }
 
 /// Minecraft-related config options
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Minecraft {
     /// Path to the Minecraft server jar
     pub server_path: PathBuf,
@@ -158,7 +159,7 @@ impl Default for Minecraft {
 }
 
 /// Discord-related config options
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Discord {
     pub enable_bridge: bool,
     pub token: String,
@@ -178,7 +179,7 @@ impl Default for Discord {
 }
 
 /// Logging-related config options
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Logging {
     /// Logging level for mc-server-wrapper dependencies
     ///

@@ -13,6 +13,7 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 * Updated `twilight` to 0.13
 * Updated `tui` to 0.19
 * Updated `crossterm` to 0.25.0
+* Replaced `notify` with `notify-debouncer-mini` 0.2.1
 * Updated other dependencies
 
 ## [alpha7] - 2022-3-21

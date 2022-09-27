@@ -8,13 +8,13 @@ edition = "2018"
 [dependencies]
 mc-server-wrapper-lib = { path = "../mc-server-wrapper-lib" }
 structopt = "0.3"
-tokio = { version = "1.15.0", features = ["full"] }
+tokio = { version = "1.21.1", features = ["full"] }
 futures = "0.3"
-twilight-http = "0.13.0"
-twilight-gateway = "0.13.0"
+twilight-http = "0.13.1"
+twilight-gateway = "0.13.2"
 twilight-cache-inmemory = "0.13.0"
-twilight-model = "0.13.0"
-twilight-command-parser = "0.9"
+twilight-model = "0.13.4"
+twilight-command-parser = "0.9.0"
 twilight-mention = "0.13.0"
 # TODO: replace this with a crate of my own
 minecraft-chat = "0.1"
@@ -32,11 +32,11 @@ anyhow = "1.0"
 crossterm = { version = "0.25.0", features = ["event-stream"] }
 tui = "0.19.0"
 unicode-width = "0.1"
-textwrap = "0.15"
+textwrap = "0.15.1"
 toml = "0.5"
 serde = "1.0"
 serde_derive = "1.0"
-notify = "4.0"
+notify-debouncer-mini = { version = "0.2.1", default-features = false }
 
 [dev-dependencies]
 expect-test = "1.0"
