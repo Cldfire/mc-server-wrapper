@@ -470,7 +470,7 @@ impl DiscordBridge {
 
                 match content_res {
                     Ok(cm) => {
-                        if let Err(e) = cm.exec().await {
+                        if let Err(e) = cm.await {
                             warn!("Failed to send Discord message: {}", e);
                         }
                     }

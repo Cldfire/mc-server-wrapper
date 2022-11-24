@@ -358,6 +358,11 @@ mod content_format_mentions {
             topic: None,
             user_limit: None,
             video_quality_mode: None,
+            applied_tags: None,
+            available_tags: None,
+            default_reaction_emoji: None,
+            default_thread_rate_limit_per_user: None,
+            flags: None,
         })))
     }
 
