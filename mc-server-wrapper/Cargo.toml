@@ -8,19 +8,19 @@ edition = "2018"
 [dependencies]
 mc-server-wrapper-lib = { path = "../mc-server-wrapper-lib" }
 structopt = "0.3"
-tokio = { version = "1.21.1", features = ["full"] }
+tokio = { version = "1.24.1", features = ["full"] }
 futures = "0.3"
-twilight-http = "0.14.0"
+twilight-http = "0.14.1"
 twilight-gateway = "0.14.0"
-twilight-cache-inmemory = "0.14.0"
-twilight-model = "0.14.0"
+twilight-cache-inmemory = "0.14.1"
+twilight-model = "0.14.2"
 twilight-mention = "0.14.0"
 # TODO: replace this with a crate of my own
 minecraft-chat = "0.1"
 log = "0.4"
 fern = "0.6"
 log-panics = "2.0"
-time = { version = "0.3.6", features = [
+time = { version = "0.3.17", features = [
     "local-offset",
     "formatting",
     "macros",

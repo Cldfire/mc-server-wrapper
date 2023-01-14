@@ -363,6 +363,8 @@ mod content_format_mentions {
             default_reaction_emoji: None,
             default_thread_rate_limit_per_user: None,
             flags: None,
+            default_forum_layout: None,
+            default_sort_order: None,
         })))
     }
 

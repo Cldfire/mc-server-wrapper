@@ -6,12 +6,12 @@ authors = ["Cldfire"]
 edition = "2018"
 
 [dependencies]
-time = { version = "0.3.6", features = [
+time = { version = "0.3.17", features = [
     "local-offset",
     "formatting",
     "macros",
 ] }
-tokio = { version = "1.15.0", features = ["full"] }
+tokio = { version = "1.24.1", features = ["full"] }
 thiserror = "1.0"
 log = "0.4"
 once_cell = "1.5"
