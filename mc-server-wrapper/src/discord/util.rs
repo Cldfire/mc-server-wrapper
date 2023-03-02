@@ -365,6 +365,7 @@ mod content_format_mentions {
             flags: None,
             default_forum_layout: None,
             default_sort_order: None,
+            managed: None,
         })))
     }
 

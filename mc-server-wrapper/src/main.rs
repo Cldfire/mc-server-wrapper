@@ -85,6 +85,13 @@ pub struct Opt {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    // See https://github.com/time-rs/time/issues/293#issuecomment-1005002386. The
+    // unsoundness here is not in the `time` library, but in the Rust stdlib, and as
+    // such it needs to be fixed there.
+    unsafe {
+        time::util::local_offset::set_soundness(time::util::local_offset::Soundness::Unsound);
+    }
+
     log_panics::init();
     CONSOLE_MSG_LOG_TARGET.set("mc").unwrap();
     ONLINE_PLAYERS.set(Mutex::new(BTreeMap::new())).unwrap();

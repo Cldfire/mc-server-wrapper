@@ -1,7 +1,7 @@
 use log::{debug, info, warn};
 
 use twilight_cache_inmemory::{model::CachedMember, InMemoryCache, Reference, ResourceType};
-use twilight_gateway::{cluster::Events, Cluster, Event};
+use twilight_gateway::{Event, MessageSender, Shard, ShardId};
 use twilight_http::Client as DiscordClient;
 use twilight_model::{
     channel::{message::MessageType, Message},
@@ -21,7 +21,6 @@ use minecraft_chat::{Color, Payload};
 
 use util::{activity, format_mentions_in, tellraw_prefix};
 
-use futures::StreamExt;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc::Sender;
 
@@ -41,7 +40,7 @@ pub async fn setup_discord(
     allow_status_updates: bool,
 ) -> Result<DiscordBridge, anyhow::Error> {
     info!("Setting up Discord");
-    let (discord, mut events) =
+    let (discord, mut shard) =
         DiscordBridge::new(token, bridge_channel_id, allow_status_updates).await?;
 
     let discord_clone = discord.clone();
@@ -50,18 +49,32 @@ pub async fn setup_discord(
 
         // For all received Discord events, map the event to a `ServerCommand`
         // (if necessary) and send it to the Minecraft server
-        while let Some(e) = events.next().await {
-            let discord = discord.clone();
-            let cmd_sender_clone = mc_cmd_sender.clone();
+        loop {
+            match shard.next_event().await {
+                Ok(e) => {
+                    let discord = discord.clone();
+                    let cmd_sender_clone = mc_cmd_sender.clone();
 
-            // Update the cache
-            discord.inner.as_ref().unwrap().cache.update(&e.1);
+                    // Update the cache
+                    discord.inner.as_ref().unwrap().cache.update(&e);
 
-            tokio::spawn(async move {
-                if let Err(e) = discord.handle_discord_event(e, cmd_sender_clone).await {
-                    warn!("Failed to handle Discord event: {}", e);
+                    tokio::spawn(async move {
+                        if let Err(e) = discord.handle_discord_event(e, cmd_sender_clone).await {
+                            warn!("Failed to handle Discord event: {}", e);
+                        }
+                    });
                 }
-            });
+                Err(source) => {
+                    log::warn!("error receiving event from shard: {}", source);
+
+                    if source.is_fatal() {
+                        log::error!("fatal event received, breaking shard event loop");
+                        break;
+                    }
+
+                    continue;
+                }
+            };
         }
     });
 
@@ -88,7 +101,7 @@ pub struct DiscordBridge {
 #[derive(Debug)]
 struct DiscordBridgeInner {
     client: DiscordClient,
-    cluster: Arc<Cluster>,
+    shard_message_sender: MessageSender,
     cache: InMemoryCache,
 }
 
@@ -101,26 +114,18 @@ impl DiscordBridge {
         token: String,
         bridge_channel_id: Id<ChannelMarker>,
         allow_status_updates: bool,
-    ) -> Result<(Self, Events), anyhow::Error> {
-        let (cluster, events) = Cluster::builder(
+    ) -> Result<(Self, Shard), anyhow::Error> {
+        // Use intents to only receive guild message events.
+        let shard = Shard::new(
+            ShardId::ONE,
             token.clone(),
             Intents::GUILDS
                 | Intents::GUILD_MESSAGES
                 | Intents::GUILD_MEMBERS
                 | Intents::MESSAGE_CONTENT,
-        )
-        .build()
-        .await
-        .map(|(cluster, events)| (Arc::new(cluster), events))?;
+        );
 
         let client = DiscordClient::new(token);
-
-        // TODO: change this pattern up such that we no longer need to wrap the
-        // cluster in an arc
-        let cluster_spawn = cluster.clone();
-        tokio::spawn(async move {
-            cluster_spawn.up().await;
-        });
 
         let cache = InMemoryCache::builder()
             .resource_types(ResourceType::GUILD | ResourceType::CHANNEL | ResourceType::MEMBER)
@@ -130,13 +135,13 @@ impl DiscordBridge {
             Self {
                 inner: Some(Arc::new(DiscordBridgeInner {
                     client,
-                    cluster,
+                    shard_message_sender: shard.sender(),
                     cache,
                 })),
                 bridge_channel_id,
                 allow_status_updates,
             },
-            events,
+            shard,
         ))
     }
 
@@ -149,9 +154,9 @@ impl DiscordBridge {
         }
     }
 
-    /// Provides access to the `Cluster` inside this struct
-    pub fn cluster(&self) -> Option<Arc<Cluster>> {
-        self.inner.as_ref().map(|i| i.cluster.clone())
+    /// Provides access to the `MessageSender` inside this struct
+    pub fn shard_message_sender(&self) -> Option<MessageSender> {
+        self.inner.as_ref().map(|i| i.shard_message_sender.clone())
     }
 
     /// Provides access to the `InMemoryCache` inside this struct
@@ -193,14 +198,14 @@ impl DiscordBridge {
     #[allow(clippy::single_match)]
     pub async fn handle_discord_event(
         &self,
-        event: (u64, Event),
+        event: Event,
         mc_cmd_sender: Sender<ServerCommand>,
     ) -> Result<(), anyhow::Error> {
         match event {
-            (_, Event::Ready(_)) => {
+            Event::Ready(_) => {
                 info!("Discord bridge online");
             }
-            (shard_id, Event::GuildCreate(guild)) => {
+            Event::GuildCreate(guild) => {
                 // Log the name of the channel we're bridging to as well if it's
                 // in this guild
                 if let Some(channel_name) = guild
@@ -214,24 +219,21 @@ impl DiscordBridge {
                         guild.name, channel_name
                     );
 
+                    let message_sender = self.shard_message_sender().unwrap();
+
                     // This is the guild containing the channel we're bridging to. We want to
                     // initially cache all of the members in the guild so that we can later use
                     // the cached info to display nicknames when outputting Discord messages in
                     // Minecraft
                     // TODO: if bigger servers start using this it might be undesirable to cache
                     // all member info right out of the gate
-                    self.cluster()
-                        .unwrap()
-                        .command(
-                            shard_id,
-                            &RequestGuildMembers::builder(guild.id).query("", None),
-                        )
-                        .await?;
+                    message_sender
+                        .command(&RequestGuildMembers::builder(guild.id).query("", None))?;
                 } else {
                     info!("Connected to guild '{}'", guild.name);
                 }
             }
-            (_, Event::MessageCreate(msg)) => {
+            Event::MessageCreate(msg) => {
                 if msg.kind == MessageType::Regular
                     && !msg.author.bot
                     && msg.channel_id == self.bridge_channel_id
@@ -500,24 +502,13 @@ impl DiscordBridge {
             let text = text.into();
 
             if let Some(inner) = self.inner {
-                for shard_id in inner.cluster.info().keys() {
-                    if let Some(shard) = inner.cluster.shard(*shard_id) {
-                        match shard
-                            .command(
-                                &UpdatePresence::new(
-                                    vec![activity(text.clone())],
-                                    false,
-                                    None,
-                                    Status::Online,
-                                )
-                                .unwrap(),
-                            )
-                            .await
-                        {
-                            Ok(()) => {}
-                            Err(e) => warn!("Failed to update bot's status: {}", e),
-                        }
-                    }
+                let message_sender = inner.shard_message_sender.clone();
+                match message_sender.command(
+                    &UpdatePresence::new(vec![activity(text)], false, None, Status::Online)
+                        .unwrap(),
+                ) {
+                    Ok(()) => {}
+                    Err(e) => warn!("Failed to update bot's status: {}", e),
                 }
             }
         })

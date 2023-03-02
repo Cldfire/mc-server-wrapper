@@ -10,9 +10,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ### Internal
 
-* Updated `twilight` to 0.14
+* Updated `twilight` to 0.15
 * Updated `tui` to 0.19
-* Updated `crossterm` to 0.25.0
+* Updated `crossterm` to 0.26.0
+* Updated `toml` to 0.7
 * Replaced `notify` with `notify-debouncer-mini` 0.2.1
 * Updated `textwrap` to 0.16.0
 * Updated other dependencies
