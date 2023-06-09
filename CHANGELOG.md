@@ -4,6 +4,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+## [alpha8] - 2023-06-08
+
+Dependency updates and adjustments for the new Discord username format.
+
 ## Added
 
 * `--version` flag for checking the application version
@@ -132,7 +136,8 @@ Small release updating some dependencies.
 
 Tagging a first alpha release after a few months of working on the project.
 
-[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha7...HEAD
+[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha8...HEAD
+[alpha8]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha7...alpha8
 [alpha7]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha6...alpha7
 [alpha6]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha5...alpha6
 [alpha5]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha4...alpha5

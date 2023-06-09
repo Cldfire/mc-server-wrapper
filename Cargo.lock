@@ -736,7 +736,7 @@ dependencies = [
 
 [[package]]
 name = "mc-server-wrapper"
-version = "0.1.0-alpha7"
+version = "0.1.0-alpha8"
 dependencies = [
  "anyhow",
  "crossterm 0.26.1",

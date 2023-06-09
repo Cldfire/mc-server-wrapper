@@ -1,6 +1,6 @@
 [package]
 name = "mc-server-wrapper"
-version = "0.1.0-alpha7"
+version = "0.1.0-alpha8"
 license = "MIT OR Apache-2.0"
 authors = ["Cldfire"]
 edition = "2018"
