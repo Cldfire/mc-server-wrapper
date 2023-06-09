@@ -35,7 +35,7 @@ textwrap = "0.16.0"
 toml = "0.7.2"
 serde = "1.0"
 serde_derive = "1.0"
-notify-debouncer-mini = { version = "0.2.1", default-features = false }
+notify-debouncer-mini = { version = "0.3.0", default-features = false }
 
 [dev-dependencies]
 expect-test = "1.0"
