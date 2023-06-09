@@ -21,7 +21,7 @@ use minecraft_chat::{Color, Payload};
 
 use util::{activity, format_mentions_in, tellraw_prefix};
 
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 use tokio::sync::mpsc::Sender;
 
 mod message_span_iter;
@@ -359,12 +359,28 @@ impl DiscordBridge {
             );
         }
 
+        let username = || {
+            // Technically a discriminator of "0" means the user has migrated to the
+            // new username system (which does not use a discriminator). A user that
+            // still has a discriminator of "0000" is possible, but only as a
+            // webhook (all human users will have a non-zero discriminator).
+            // There's no way to differentiate between a discriminator of "0" and
+            // a discriminator of "0000" in Twilight right now (because the type is
+            // u16 and not string), so we perform this check instead.
+            if msg.author.discriminator > 0 || msg.webhook_id.is_none() {
+                Cow::Borrowed(&msg.author.name)
+            } else {
+                Cow::Owned(format!(
+                    "{}#{}",
+                    &msg.author.name,
+                    msg.author.discriminator()
+                ))
+            }
+        };
+
         let tellraw_msg_builder = tellraw_prefix()
             .then(Payload::text(&format!("<{}> ", author_display_name)))
-            .hover_show_text(&format!(
-                "{}#{}",
-                &msg.author.name, &msg.author.discriminator
-            ));
+            .hover_show_text(username().as_str());
 
         let (content, tellraw_msg_builder) = format_mentions_in(
             &msg.content,
@@ -379,11 +395,10 @@ impl DiscordBridge {
         ConsoleMsg::new(
             ConsoleMsgType::Info,
             format!(
-                "{}<{} ({}#{})> {}",
+                "{}<{} ({})> {}",
                 CHAT_PREFIX,
                 author_display_name,
-                &msg.author.name,
-                &msg.author.discriminator,
+                username(),
                 &content
             ),
         )

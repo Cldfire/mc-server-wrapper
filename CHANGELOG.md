@@ -8,6 +8,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 * `--version` flag for checking the application version
 
+### Changed
+
+* Chat message formatting has been updated to handle the new Discord username system.
+
 ### Internal
 
 * Updated `twilight` to 0.15
