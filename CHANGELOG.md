@@ -22,6 +22,7 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 * Updated `textwrap` to 0.16.0
 * Updated other dependencies
 * Renamed `master` branch to `main`
+* Added RELEASE.md documenting how to release `mc-server-wrapper`
 
 ## [alpha7] - 2022-3-21
 
