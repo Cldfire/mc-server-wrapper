@@ -4,15 +4,15 @@ use std::{
 };
 
 use crossterm::event::{Event, KeyCode};
-use time::{format_description::FormatItem, Duration, OffsetDateTime, UtcOffset};
-use tui::{
+use ratatui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::{Span, Spans},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, Paragraph, Row, Table, Tabs},
     Frame,
 };
+use time::{format_description::FormatItem, Duration, OffsetDateTime, UtcOffset};
 use unicode_width::UnicodeWidthStr;
 
 use crate::OnlinePlayerInfo;
@@ -94,7 +94,7 @@ impl TabsState {
             self.titles
                 .iter()
                 .map(|s| s.as_ref())
-                .map(Spans::from)
+                .map(Line::from)
                 .collect(),
         )
         .block(Block::default().borders(Borders::BOTTOM))
@@ -182,12 +182,12 @@ impl LogsState {
     /// Draw the current state in the given `area`
     fn draw<B: Backend>(&mut self, f: &mut Frame<B>, area: Rect) {
         let (input_area, logs_area) = {
-            let mut chunks = Layout::default()
+            let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Min(0), Constraint::Length(2)].as_ref())
                 .split(area);
-            let input_area = chunks.pop().unwrap();
-            let logs_area = chunks.pop().unwrap();
+            let input_area = chunks[1];
+            let logs_area = chunks[0];
 
             (input_area, logs_area)
         };
@@ -341,7 +341,7 @@ impl PlayersState {
         let online_players = Table::new(
             online_players
                 .iter()
-                .map(|d| Row::new(d.iter().map(|s| s.as_ref()))),
+                .map(|d| Row::new(d.iter().map(|s| s.as_str()).map(Text::from))),
         )
         .header(Row::new(vec!["Name", "Login Time", "Session Length"]))
         .block(Block::default().borders(Borders::NONE))
@@ -384,7 +384,7 @@ pub struct InputState {
 impl InputState {
     /// Draw the current state in the given `area`
     fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect) {
-        let text = Spans::from(vec![Span::raw("> "), Span::raw(&self.value)]);
+        let text = Line::from(vec![Span::raw("> "), Span::raw(&self.value)]);
         let value_width = self.value.width() as u16;
 
         let input = Paragraph::new(text)

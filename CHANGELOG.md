@@ -4,6 +4,10 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+### Internal
+
+* Replace `tui` with `ratatui` 0.21.0
+
 ## [alpha8] - 2023-06-08
 
 Dependency updates and adjustments for the new Discord username format.
