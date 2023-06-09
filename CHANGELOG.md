@@ -17,6 +17,7 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 * Replaced `notify` with `notify-debouncer-mini` 0.3.0
 * Updated `textwrap` to 0.16.0
 * Updated other dependencies
+* Renamed `master` branch to `main`
 
 ## [alpha7] - 2022-3-21
 
