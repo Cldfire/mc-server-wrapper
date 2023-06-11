@@ -33,9 +33,16 @@ ratatui = "0.21.0"
 unicode-width = "0.1"
 textwrap = "0.16.0"
 toml = "0.7.2"
-serde = "1.0"
-serde_derive = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 notify-debouncer-mini = { version = "0.3.0", default-features = false }
+axum = "0.6.18"
+axum-live-view = { git = "https://github.com/davidpdrsn/axum-live-view", rev = "24b39a1", features = [
+    "precompiled-js",
+] }
+tower = "0.4.13"
+serde_json = "1.0.96"
+tower-http = { version = "0.4.0", features = ["fs"] }
+askama_escape = "0.10.3"
 
 [dev-dependencies]
 expect-test = "1.0"

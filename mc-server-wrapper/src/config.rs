@@ -1,7 +1,7 @@
 use crate::Opt;
 use anyhow::{anyhow, Context};
 use notify_debouncer_mini::{new_debouncer, notify, DebouncedEvent};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{
     num::NonZeroU64,
     path::{Path, PathBuf},

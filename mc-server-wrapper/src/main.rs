@@ -17,6 +17,7 @@ use log::*;
 
 use crate::discord::{util::sanitize_for_markdown, *};
 
+use crate::liveview::{run_web_server, LiveViewFromClient, LiveViewFromServer};
 use crate::ui::TuiState;
 
 use config::Config;
@@ -31,6 +32,7 @@ use util::{format_online_players, OnlinePlayerFormat};
 
 mod config;
 mod discord;
+mod liveview;
 mod logging;
 mod ui;
 
@@ -112,6 +114,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     config.merge_in_args(opt)?;
     let (log_sender, mut log_receiver) = mpsc::channel(64);
+    let (live_view_client_tx, mut live_view_client_rx) = mpsc::channel(64);
+    let (live_view_server_tx, _) = tokio::sync::broadcast::channel(512);
     let stdout = std::io::stdout();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -171,12 +175,18 @@ async fn main() -> Result<(), anyhow::Error> {
         DiscordBridge::new_noop()
     };
 
+    let live_view_server_tx_clone = live_view_server_tx.clone();
+    tokio::spawn(async move {
+        run_web_server(live_view_server_tx_clone, live_view_client_tx).await;
+    });
+
     let mut term_events = EventStream::new();
 
     // This loop handles both user input and events from the Minecraft server
     loop {
         // Make sure we are up-to-date on logs before drawing the UI
         while let Some(Some(record)) = log_receiver.recv().now_or_never() {
+            let _ = live_view_server_tx.send(LiveViewFromServer::LogMessage(record.clone()));
             tui_state.logs_state.add_record(record);
         }
 
@@ -339,8 +349,41 @@ async fn main() -> Result<(), anyhow::Error> {
                 break;
             },
             Some(record) = log_receiver.recv() => {
+                let _ = live_view_server_tx
+                    .send(LiveViewFromServer::LogMessage(record.clone()));
                 tui_state.logs_state.add_record(record);
             },
+            Some(from_live_view_client) = live_view_client_rx.recv() => {
+                match from_live_view_client {
+                    LiveViewFromClient::ConsoleInput(text) => {
+                        // TODO: unduplicate code
+                        match text.as_str() {
+                            "quit" => {
+                                mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                            }
+                            _ => {
+                                if mc_server.running().await {
+                                    mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(text)).await.unwrap();
+                                } else {
+                                    // TODO: create a command parser for user input?
+                                    // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe
+                                    match text.as_str() {
+                                        "start" => {
+                                            info!("Starting the Minecraft server");
+                                            mc_cmd_sender.send(ServerCommand::StartServer { config: None }).await.unwrap();
+                                            last_start_time = Instant::now();
+                                        },
+                                        "stop" => {
+                                            mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                                        },
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             maybe_term_event = term_events.next() => {
                 match maybe_term_event {
                     Some(Ok(event)) => {
@@ -348,21 +391,28 @@ async fn main() -> Result<(), anyhow::Error> {
                             #[allow(clippy::single_match)]
                             match key_event.code {
                                 KeyCode::Enter => if tui_state.tab_state.current_idx() == 0 {
-                                    if mc_server.running().await {
-                                        mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.logs_state.input_state.value().to_string())).await.unwrap();
-                                    } else {
-                                        // TODO: create a command parser for user input?
-                                        // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe
-                                        match tui_state.logs_state.input_state.value() {
-                                            "start" => {
-                                                info!("Starting the Minecraft server");
-                                                mc_cmd_sender.send(ServerCommand::StartServer { config: None }).await.unwrap();
-                                                last_start_time = Instant::now();
-                                            },
-                                            "stop" => {
-                                                mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                                            },
-                                            _ => {}
+                                    match tui_state.logs_state.input_state.value() {
+                                        "quit" => {
+                                            mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                                        }
+                                        _ => {
+                                            if mc_server.running().await {
+                                                mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.logs_state.input_state.value().to_string())).await.unwrap();
+                                            } else {
+                                                // TODO: create a command parser for user input?
+                                                // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe
+                                                match tui_state.logs_state.input_state.value() {
+                                                    "start" => {
+                                                        info!("Starting the Minecraft server");
+                                                        mc_cmd_sender.send(ServerCommand::StartServer { config: None }).await.unwrap();
+                                                        last_start_time = Instant::now();
+                                                    },
+                                                    "stop" => {
+                                                        mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
+                                                    },
+                                                    _ => {}
+                                                }
+                                            }
                                         }
                                     }
 
