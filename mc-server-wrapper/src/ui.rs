@@ -1,9 +1,11 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt::Display,
+    sync::Arc,
 };
 
 use crossterm::event::{Event, KeyCode};
+use mc_server_wrapper_lib::{communication::ServerCommand, McServerManager};
 use ratatui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -13,9 +15,10 @@ use ratatui::{
     Frame,
 };
 use time::{format_description::FormatItem, Duration, OffsetDateTime, UtcOffset};
+use tokio::sync::mpsc;
 use unicode_width::UnicodeWidthStr;
 
-use crate::OnlinePlayerInfo;
+use crate::{EdgeToCoreCommand, OnlinePlayerInfo};
 
 /// Represents the current state of the terminal UI
 #[derive(Debug)]
@@ -23,10 +26,15 @@ pub struct TuiState {
     pub tab_state: TabsState,
     pub logs_state: LogsState,
     pub players_state: PlayersState,
+    pub edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
+    pub mc_server: Arc<McServerManager>,
 }
 
 impl TuiState {
-    pub fn new() -> Self {
+    pub fn new(
+        edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
+        mc_server: Arc<McServerManager>,
+    ) -> Self {
         TuiState {
             // TODO: don't hardcode this
             tab_state: TabsState::new(vec!["Logs".into(), "Players".into()]),
@@ -36,6 +44,8 @@ impl TuiState {
                 input_state: InputState { value: "".into() },
             },
             players_state: PlayersState,
+            edge_to_core_cmd_tx,
+            mc_server,
         }
     }
 
@@ -62,10 +72,14 @@ impl TuiState {
 
     /// Update the state based on the given input
     // TODO: make input dispatch more generic
-    pub fn handle_input(&mut self, event: Event) {
+    pub async fn handle_input(&mut self, event: Event) {
         self.tab_state.handle_input(&event);
         match self.tab_state.current_idx {
-            0 => self.logs_state.handle_input(&event),
+            0 => {
+                self.logs_state
+                    .handle_input(&event, &self.edge_to_core_cmd_tx, &self.mc_server)
+                    .await
+            }
             1 => self.players_state.handle_input(&event),
             _ => unreachable!(),
         }
@@ -127,12 +141,6 @@ impl TabsState {
         } else {
             self.current_idx = self.titles.len() - 1;
         }
-    }
-
-    /// Get the current tab index
-    // TODO: this being public is a hack
-    pub fn current_idx(&self) -> usize {
-        self.current_idx
     }
 }
 
@@ -265,8 +273,15 @@ impl LogsState {
     }
 
     /// Update the state based on the given input
-    fn handle_input(&mut self, event: &Event) {
-        self.input_state.handle_input(event);
+    async fn handle_input(
+        &mut self,
+        event: &Event,
+        edge_to_core_cmd_tx: &mpsc::Sender<EdgeToCoreCommand>,
+        mc_server: &Arc<McServerManager>,
+    ) {
+        self.input_state
+            .handle_input(event, edge_to_core_cmd_tx, mc_server)
+            .await;
     }
 
     /// Add a record to be displayed
@@ -396,12 +411,64 @@ impl InputState {
     }
 
     /// Update the state based on the given input
-    fn handle_input(&mut self, event: &Event) {
+    async fn handle_input(
+        &mut self,
+        event: &Event,
+        edge_to_core_cmd_tx: &mpsc::Sender<EdgeToCoreCommand>,
+        mc_server: &Arc<McServerManager>,
+    ) {
         if let Event::Key(key_event) = event {
             match key_event.code {
                 KeyCode::Char(c) => self.value.push(c),
                 KeyCode::Backspace => {
                     self.value.pop();
+                }
+                KeyCode::Enter => {
+                    match self.value.as_str() {
+                        "quit" => {
+                            edge_to_core_cmd_tx
+                                .send(EdgeToCoreCommand::MinecraftCommand(
+                                    ServerCommand::StopServer { forever: true },
+                                ))
+                                .await
+                                .unwrap();
+                        }
+                        "" => {}
+                        _ => {
+                            if mc_server.running().await {
+                                edge_to_core_cmd_tx
+                                    .send(EdgeToCoreCommand::MinecraftCommand(
+                                        ServerCommand::WriteCommandToStdin(self.value.clone()),
+                                    ))
+                                    .await
+                                    .unwrap();
+                            } else {
+                                // TODO: create a command parser for user input?
+                                // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe
+                                match self.value.as_str() {
+                                    "start" => {
+                                        edge_to_core_cmd_tx
+                                            .send(EdgeToCoreCommand::MinecraftCommand(
+                                                ServerCommand::StartServer { config: None },
+                                            ))
+                                            .await
+                                            .unwrap();
+                                    }
+                                    "stop" => {
+                                        edge_to_core_cmd_tx
+                                            .send(EdgeToCoreCommand::MinecraftCommand(
+                                                ServerCommand::StopServer { forever: true },
+                                            ))
+                                            .await
+                                            .unwrap();
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+
+                    self.clear();
                 }
                 _ => {}
             }
@@ -409,13 +476,8 @@ impl InputState {
     }
 
     /// Clear the input
-    pub fn clear(&mut self) {
+    fn clear(&mut self) {
         self.value.clear();
-    }
-
-    /// Get the current value of the input
-    pub fn value(&self) -> &str {
-        &self.value
     }
 }
 

@@ -17,12 +17,12 @@ use log::*;
 
 use crate::discord::{util::sanitize_for_markdown, *};
 
-use crate::liveview::{run_web_server, LiveViewFromClient, LiveViewFromServer};
+use crate::liveview::{run_web_server, LiveViewFromServer};
 use crate::ui::TuiState;
 
 use config::Config;
 use crossterm::{
-    event::{Event, EventStream, KeyCode},
+    event::EventStream,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
@@ -85,6 +85,11 @@ pub struct Opt {
     bridge_to_discord: bool,
 }
 
+#[derive(Debug, Clone)]
+pub enum EdgeToCoreCommand {
+    MinecraftCommand(ServerCommand),
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     // See https://github.com/time-rs/time/issues/293#issuecomment-1005002386. The
@@ -114,19 +119,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     config.merge_in_args(opt)?;
     let (log_sender, mut log_receiver) = mpsc::channel(64);
-    let (live_view_client_tx, mut live_view_client_rx) = mpsc::channel(64);
+    let (edge_to_core_command_tx, mut edge_to_core_command_rx) = mpsc::channel(64);
     let (live_view_server_tx, _) = tokio::sync::broadcast::channel(512);
-    let stdout = std::io::stdout();
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    let mut tui_state = TuiState::new();
-
-    enable_raw_mode()?;
-    terminal.backend_mut().execute(EnterAlternateScreen)?;
-    defer! {
-        std::io::stdout().execute(LeaveAlternateScreen).unwrap();
-        disable_raw_mode().unwrap();
-    }
 
     logging::setup_logger(
         config
@@ -147,6 +141,18 @@ async fn main() -> Result<(), anyhow::Error> {
         false,
     );
     let (mc_server, mc_cmd_sender, mut mc_event_receiver) = McServerManager::new();
+
+    let stdout = std::io::stdout();
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+    let mut tui_state = TuiState::new(edge_to_core_command_tx.clone(), mc_server.clone());
+
+    enable_raw_mode()?;
+    terminal.backend_mut().execute(EnterAlternateScreen)?;
+    defer! {
+        std::io::stdout().execute(LeaveAlternateScreen).unwrap();
+        disable_raw_mode().unwrap();
+    }
 
     info!("Starting the Minecraft server");
     mc_cmd_sender
@@ -176,8 +182,15 @@ async fn main() -> Result<(), anyhow::Error> {
     };
 
     let live_view_server_tx_clone = live_view_server_tx.clone();
+    let edge_to_core_command_tx_clone = edge_to_core_command_tx.clone();
+    let mc_server_clone = mc_server.clone();
     tokio::spawn(async move {
-        run_web_server(live_view_server_tx_clone, live_view_client_tx).await;
+        run_web_server(
+            live_view_server_tx_clone,
+            edge_to_core_command_tx_clone,
+            mc_server_clone,
+        )
+        .await;
     });
 
     let mut term_events = EventStream::new();
@@ -353,76 +366,13 @@ async fn main() -> Result<(), anyhow::Error> {
                     .send(LiveViewFromServer::LogMessage(record.clone()));
                 tui_state.logs_state.add_record(record);
             },
-            Some(from_live_view_client) = live_view_client_rx.recv() => {
-                match from_live_view_client {
-                    LiveViewFromClient::ConsoleInput(text) => {
-                        // TODO: unduplicate code
-                        match text.as_str() {
-                            "quit" => {
-                                mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                            }
-                            _ => {
-                                if mc_server.running().await {
-                                    mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(text)).await.unwrap();
-                                } else {
-                                    // TODO: create a command parser for user input?
-                                    // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe
-                                    match text.as_str() {
-                                        "start" => {
-                                            info!("Starting the Minecraft server");
-                                            mc_cmd_sender.send(ServerCommand::StartServer { config: None }).await.unwrap();
-                                            last_start_time = Instant::now();
-                                        },
-                                        "stop" => {
-                                            mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                                        },
-                                        _ => {}
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            Some(command_from_edge) = edge_to_core_command_rx.recv() => {
+                handle_command_from_edge(command_from_edge, &mc_cmd_sender, &mut last_start_time).await;
             }
             maybe_term_event = term_events.next() => {
                 match maybe_term_event {
                     Some(Ok(event)) => {
-                        if let Event::Key(key_event) = event {
-                            #[allow(clippy::single_match)]
-                            match key_event.code {
-                                KeyCode::Enter => if tui_state.tab_state.current_idx() == 0 {
-                                    match tui_state.logs_state.input_state.value() {
-                                        "quit" => {
-                                            mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                                        }
-                                        _ => {
-                                            if mc_server.running().await {
-                                                mc_cmd_sender.send(ServerCommand::WriteCommandToStdin(tui_state.logs_state.input_state.value().to_string())).await.unwrap();
-                                            } else {
-                                                // TODO: create a command parser for user input?
-                                                // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe
-                                                match tui_state.logs_state.input_state.value() {
-                                                    "start" => {
-                                                        info!("Starting the Minecraft server");
-                                                        mc_cmd_sender.send(ServerCommand::StartServer { config: None }).await.unwrap();
-                                                        last_start_time = Instant::now();
-                                                    },
-                                                    "stop" => {
-                                                        mc_cmd_sender.send(ServerCommand::StopServer { forever: true }).await.unwrap();
-                                                    },
-                                                    _ => {}
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    tui_state.logs_state.input_state.clear();
-                                },
-                                _ => {}
-                            }
-                        }
-
-                        tui_state.handle_input(event);
+                        tui_state.handle_input(event).await;
                     },
                     Some(Err(e)) => {
                         error!("TUI input error: {}", e);
@@ -451,4 +401,24 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     Ok(())
+}
+
+async fn handle_command_from_edge(
+    command: EdgeToCoreCommand,
+    mc_cmd_sender: &mpsc::Sender<ServerCommand>,
+    last_start_time: &mut Instant,
+) {
+    match command {
+        EdgeToCoreCommand::MinecraftCommand(server_command) => {
+            match &server_command {
+                ServerCommand::StartServer { .. } => {
+                    info!("Starting the Minecraft server");
+                    *last_start_time = Instant::now();
+                }
+                _ => {}
+            }
+
+            mc_cmd_sender.send(server_command).await.unwrap();
+        }
+    }
 }

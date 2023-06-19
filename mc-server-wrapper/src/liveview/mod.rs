@@ -1,29 +1,30 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use askama_escape::MarkupDisplay;
 use axum::{extract::State, response::IntoResponse, routing::get, Router};
 use axum_live_view::{
     event_data::EventData, html, js_command, live_view::Updated, Html, LiveView, LiveViewUpgrade,
 };
+use mc_server_wrapper_lib::{communication::ServerCommand, McServerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc};
+
+use crate::EdgeToCoreCommand;
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum LiveViewFromServer {
     LogMessage(String),
 }
 
-pub enum LiveViewFromClient {
-    ConsoleInput(String),
-}
-
 pub async fn run_web_server(
     from_server: broadcast::Sender<LiveViewFromServer>,
-    from_client: mpsc::Sender<LiveViewFromClient>,
+    edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
+    mc_server: Arc<McServerManager>,
 ) {
     let app_state = AppState {
         from_server,
-        from_client,
+        edge_to_core_cmd_tx,
+        mc_server,
     };
 
     let app = Router::new()
@@ -41,7 +42,8 @@ pub async fn run_web_server(
 #[derive(Clone)]
 struct AppState {
     from_server: broadcast::Sender<LiveViewFromServer>,
-    from_client: mpsc::Sender<LiveViewFromClient>,
+    edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
+    mc_server: Arc<McServerManager>,
 }
 
 async fn root(State(state): State<AppState>, live: LiveViewUpgrade) -> impl IntoResponse {
@@ -49,7 +51,8 @@ async fn root(State(state): State<AppState>, live: LiveViewUpgrade) -> impl Into
         messages: vec![],
         input_value: String::new(),
         from_server: state.from_server.clone(),
-        from_client: state.from_client.clone(),
+        edge_to_core_cmd_tx: state.edge_to_core_cmd_tx.clone(),
+        mc_server: state.mc_server.clone(),
     };
 
     live.response(move |embed| {
@@ -73,7 +76,8 @@ struct MainView {
     messages: Vec<String>,
     input_value: String,
     from_server: broadcast::Sender<LiveViewFromServer>,
-    from_client: mpsc::Sender<LiveViewFromClient>,
+    edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
+    mc_server: Arc<McServerManager>,
 }
 
 #[derive(Eq, PartialEq, Serialize, Deserialize)]
@@ -96,7 +100,8 @@ impl LiveView for MainView {
         tokio::spawn(async move {
             while let Ok(msg) = server_rx.recv().await {
                 if handle.send(MainViewMessage::FromServer(msg)).await.is_err() {
-                    log::error!("Failed to send message to liveview component");
+                    // This means the view was shut down, no need to send any
+                    // more messages here.
                     return;
                 }
             }
@@ -120,13 +125,14 @@ impl LiveView for MainView {
                     .to_owned();
             }
             MainViewMessage::InputSubmit => {
-                let from_client_clone = self.from_client.clone();
+                let edge_to_core_cmd_tx_clone = self.edge_to_core_cmd_tx.clone();
                 let input_value_clone = self.input_value.clone();
-                tokio::spawn(async move {
-                    let _ = from_client_clone
-                        .send(LiveViewFromClient::ConsoleInput(input_value_clone))
-                        .await;
-                });
+                let mc_server_clone = self.mc_server.clone();
+                tokio::spawn(handle_input(
+                    input_value_clone,
+                    edge_to_core_cmd_tx_clone,
+                    mc_server_clone,
+                ));
 
                 self.input_value.clear();
                 js_commands.push(js_command::clear_value("#console-input"));
@@ -156,6 +162,43 @@ impl LiveView for MainView {
                     />
                 </form>
             </div>
+        }
+    }
+}
+
+async fn handle_input(
+    input_value: String,
+    edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
+    mc_server: Arc<McServerManager>,
+) {
+    if mc_server.running().await {
+        edge_to_core_cmd_tx
+            .send(EdgeToCoreCommand::MinecraftCommand(
+                ServerCommand::WriteCommandToStdin(input_value),
+            ))
+            .await
+            .unwrap();
+    } else {
+        // TODO: create a command parser for user input?
+        // https://docs.rs/clap/2.33.1/clap/struct.App.html#method.get_matches_from_safe
+        match input_value.as_str() {
+            "start" => {
+                edge_to_core_cmd_tx
+                    .send(EdgeToCoreCommand::MinecraftCommand(
+                        ServerCommand::StartServer { config: None },
+                    ))
+                    .await
+                    .unwrap();
+            }
+            "stop" => {
+                edge_to_core_cmd_tx
+                    .send(EdgeToCoreCommand::MinecraftCommand(
+                        ServerCommand::StopServer { forever: true },
+                    ))
+                    .await
+                    .unwrap();
+            }
+            _ => {}
         }
     }
 }
