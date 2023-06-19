@@ -22,7 +22,9 @@ use minecraft_chat::{Color, Payload};
 use util::{activity, format_mentions_in, tellraw_prefix};
 
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc;
+
+use crate::EdgeToCoreCommand;
 
 mod message_span_iter;
 pub mod util;
@@ -36,7 +38,7 @@ static CHAT_PREFIX: &str = "[D] ";
 pub async fn setup_discord(
     token: String,
     bridge_channel_id: Id<ChannelMarker>,
-    mc_cmd_sender: Sender<ServerCommand>,
+    edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
     allow_status_updates: bool,
 ) -> Result<DiscordBridge, anyhow::Error> {
     info!("Setting up Discord");
@@ -53,13 +55,16 @@ pub async fn setup_discord(
             match shard.next_event().await {
                 Ok(e) => {
                     let discord = discord.clone();
-                    let cmd_sender_clone = mc_cmd_sender.clone();
+                    let edge_to_core_cmd_tx_clone = edge_to_core_cmd_tx.clone();
 
                     // Update the cache
                     discord.inner.as_ref().unwrap().cache.update(&e);
 
                     tokio::spawn(async move {
-                        if let Err(e) = discord.handle_discord_event(e, cmd_sender_clone).await {
+                        if let Err(e) = discord
+                            .handle_discord_event(e, edge_to_core_cmd_tx_clone)
+                            .await
+                        {
                             warn!("Failed to handle Discord event: {}", e);
                         }
                     });
@@ -199,7 +204,7 @@ impl DiscordBridge {
     pub async fn handle_discord_event(
         &self,
         event: Event,
-        mc_cmd_sender: Sender<ServerCommand>,
+        edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
     ) -> Result<(), anyhow::Error> {
         match event {
             Event::Ready(_) => {
@@ -250,16 +255,16 @@ impl DiscordBridge {
                     self.handle_attachments_in_msg(
                         &msg,
                         author_display_name,
-                        mc_cmd_sender.clone(),
+                        edge_to_core_cmd_tx.clone(),
                     )
                     .await;
 
-                    self.handle_msg_content(&msg, author_display_name, mc_cmd_sender.clone())
+                    self.handle_msg_content(&msg, author_display_name, edge_to_core_cmd_tx.clone())
                         .await;
 
                     // We handle embeds after the message contents to replicate
                     // Discord's layout (embeds after message)
-                    self.handle_embeds_in_msg(&msg, author_display_name, mc_cmd_sender)
+                    self.handle_embeds_in_msg(&msg, author_display_name, edge_to_core_cmd_tx)
                         .await;
                 }
             }
@@ -274,7 +279,7 @@ impl DiscordBridge {
         &self,
         msg: &Message,
         author_display_name: &str,
-        mc_cmd_sender: Sender<ServerCommand>,
+        edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
     ) {
         for attachment in &msg.attachments {
             let type_str = if attachment.height.is_some() {
@@ -308,8 +313,10 @@ impl DiscordBridge {
             )
             .log();
 
-            mc_cmd_sender
-                .send(ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()))
+            edge_to_core_cmd_tx
+                .send(EdgeToCoreCommand::MinecraftCommand(
+                    ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()),
+                ))
                 .await
                 .ok();
         }
@@ -322,7 +329,7 @@ impl DiscordBridge {
         &self,
         msg: &Message,
         author_display_name: &str,
-        mc_cmd_sender: Sender<ServerCommand>,
+        edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
     ) {
         if msg.content.is_empty() {
             debug!("Empty message from Discord: {:?}", &msg);
@@ -404,9 +411,9 @@ impl DiscordBridge {
         )
         .log();
 
-        mc_cmd_sender
-            .send(ServerCommand::TellRawAll(
-                tellraw_msg_builder.build().to_json().unwrap(),
+        edge_to_core_cmd_tx
+            .send(EdgeToCoreCommand::MinecraftCommand(
+                ServerCommand::TellRawAll(tellraw_msg_builder.build().to_json().unwrap()),
             ))
             .await
             .ok();
@@ -417,7 +424,7 @@ impl DiscordBridge {
         &self,
         msg: &Message,
         author_display_name: &str,
-        mc_cmd_sender: Sender<ServerCommand>,
+        edge_to_core_cmd_tx: mpsc::Sender<EdgeToCoreCommand>,
     ) {
         for (embed, embed_url) in msg
             .embeds
@@ -461,8 +468,10 @@ impl DiscordBridge {
             )
             .log();
 
-            mc_cmd_sender
-                .send(ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()))
+            edge_to_core_cmd_tx
+                .send(EdgeToCoreCommand::MinecraftCommand(
+                    ServerCommand::TellRawAll(tellraw_msg.to_json().unwrap()),
+                ))
                 .await
                 .ok();
         }

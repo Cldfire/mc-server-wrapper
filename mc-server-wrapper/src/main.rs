@@ -169,7 +169,7 @@ async fn main() -> Result<(), anyhow::Error> {
             setup_discord(
                 discord_config.token,
                 discord_config.channel_id.into(),
-                mc_cmd_sender.clone(),
+                edge_to_core_command_tx.clone(),
                 discord_config.update_status,
             )
             .await
