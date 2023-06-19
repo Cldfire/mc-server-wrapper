@@ -20,6 +20,8 @@ pub struct Config {
     pub minecraft: Minecraft,
     /// Discord-related config options
     pub discord: Option<Discord>,
+    /// Web-related config options
+    pub web: Option<Web>,
     /// Logging-related config options
     pub logging: Logging,
 }
@@ -29,6 +31,7 @@ impl Default for Config {
         Self {
             minecraft: Minecraft::default(),
             discord: Some(Discord::default()),
+            web: Some(Web::default()),
             logging: Logging::default(),
         }
     }
@@ -80,7 +83,7 @@ impl Config {
     }
 
     /// Merge args passed in via the CLI into this config
-    pub fn merge_in_args(&mut self, args: Opt) -> Result<(), anyhow::Error> {
+    pub fn merge_in_args(&mut self, args: &Opt) -> Result<(), anyhow::Error> {
         if args.bridge_to_discord {
             if let Some(discord) = &mut self.discord {
                 discord.enable_bridge = true;
@@ -92,8 +95,8 @@ impl Config {
             }
         }
 
-        if let Some(path) = args.server_path {
-            self.minecraft.server_path = path;
+        if let Some(path) = args.server_path.as_ref() {
+            self.minecraft.server_path = path.clone();
         }
 
         Ok(())
@@ -175,6 +178,18 @@ impl Default for Discord {
             channel_id: NonZeroU64::new(123).unwrap(),
             update_status: true,
         }
+    }
+}
+
+/// Web-related config options
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Web {
+    pub enabled: bool,
+}
+
+impl Default for Web {
+    fn default() -> Self {
+        Self { enabled: false }
     }
 }
 

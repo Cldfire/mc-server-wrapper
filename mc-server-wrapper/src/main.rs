@@ -14,10 +14,11 @@ use mc_server_wrapper_lib::{
 };
 
 use log::*;
+use tokio::task::AbortHandle;
 
 use crate::discord::{util::sanitize_for_markdown, *};
 
-use crate::liveview::{run_web_server, LiveViewFromServer};
+use crate::liveview::LiveViewFromServer;
 use crate::ui::TuiState;
 
 use config::Config;
@@ -117,7 +118,7 @@ async fn main() -> Result<(), anyhow::Error> {
         return Ok(());
     }
 
-    config.merge_in_args(opt)?;
+    config.merge_in_args(&opt)?;
     let (log_sender, mut log_receiver) = mpsc::channel(64);
     let (edge_to_core_command_tx, mut edge_to_core_command_rx) = mpsc::channel(64);
     let (live_view_server_tx, _) = tokio::sync::broadcast::channel(512);
@@ -137,7 +138,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let mc_config = McServerConfig::new(
         config.minecraft.server_path.clone(),
         config.minecraft.memory,
-        config.minecraft.jvm_flags,
+        config.minecraft.jvm_flags.clone(),
         false,
     );
     let (mc_server, mc_cmd_sender, mut mc_event_receiver) = McServerManager::new();
@@ -164,10 +165,10 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut last_start_time = Instant::now();
 
     // TODO: start drawing UI before setting up discord
-    let discord = if let Some(discord_config) = config.discord {
+    let discord = if let Some(discord_config) = config.discord.as_ref() {
         if discord_config.enable_bridge {
             setup_discord(
-                discord_config.token,
+                discord_config.token.clone(),
                 discord_config.channel_id.into(),
                 edge_to_core_command_tx.clone(),
                 discord_config.update_status,
@@ -181,17 +182,32 @@ async fn main() -> Result<(), anyhow::Error> {
         DiscordBridge::new_noop()
     };
 
-    let live_view_server_tx_clone = live_view_server_tx.clone();
-    let edge_to_core_command_tx_clone = edge_to_core_command_tx.clone();
-    let mc_server_clone = mc_server.clone();
-    tokio::spawn(async move {
-        run_web_server(
-            live_view_server_tx_clone,
-            edge_to_core_command_tx_clone,
-            mc_server_clone,
-        )
-        .await;
-    });
+    let mut web_server_abort_handle = None;
+
+    let run_web_server = |web_server_abort_handle: &mut Option<AbortHandle>| {
+        if web_server_abort_handle.is_some() {
+            return;
+        }
+
+        let live_view_server_tx_clone = live_view_server_tx.clone();
+        let edge_to_core_command_tx_clone = edge_to_core_command_tx.clone();
+        let mc_server_clone = mc_server.clone();
+        *web_server_abort_handle = Some(
+            tokio::spawn(async move {
+                liveview::run_web_server(
+                    live_view_server_tx_clone,
+                    edge_to_core_command_tx_clone,
+                    mc_server_clone,
+                )
+                .await;
+            })
+            .abort_handle(),
+        );
+    };
+
+    if config.web.as_ref().map(|w| w.enabled).unwrap_or_default() {
+        run_web_server(&mut web_server_abort_handle);
+    }
 
     let mut term_events = EventStream::new();
 
@@ -387,9 +403,14 @@ async fn main() -> Result<(), anyhow::Error> {
                 match config_file_event {
                     // this currently is not used for anything, it's here
                     // for future use
-                    Some(event) => match event {
-                        Ok(_events) => debug!("Events fired for config file at path"),
-                        Err(_errors) => debug!("Received errors from config file watcher"),
+                    Some(event) => {
+                        handle_config_file_event(event, &mut config, &opt).await;
+
+                        match (&web_server_abort_handle, config.web.as_ref().map(|w| w.enabled).unwrap_or_default()) {
+                            (Some(_), false) => web_server_abort_handle.take().unwrap().abort(),
+                            (None, true) => run_web_server(&mut web_server_abort_handle),
+                            _ => {}
+                        }
                     },
                     // TODO: should we break or panic in these cases?
                     None => unreachable!()
@@ -420,5 +441,25 @@ async fn handle_command_from_edge(
 
             mc_cmd_sender.send(server_command).await.unwrap();
         }
+    }
+}
+
+async fn handle_config_file_event(
+    event: notify_debouncer_mini::DebounceEventResult,
+    config: &mut Config,
+    opt: &Opt,
+) {
+    match event {
+        Ok(_) => match Config::load(opt.config.as_path()).await {
+            Ok(mut new_config) => match new_config.merge_in_args(opt) {
+                Ok(_) => {
+                    *config = new_config;
+                    info!("Config reloaded successfully");
+                }
+                Err(e) => error!("Reloading config failed: {}", e),
+            },
+            Err(e) => error!("Reloading config failed: {}", e),
+        },
+        Err(errors) => error!("Received errors from config file watcher: {:?}", errors),
     }
 }
