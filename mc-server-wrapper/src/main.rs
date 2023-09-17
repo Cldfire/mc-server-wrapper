@@ -389,7 +389,7 @@ async fn main() -> Result<(), anyhow::Error> {
                     // for future use
                     Some(event) => match event {
                         Ok(_events) => debug!("Events fired for config file at path"),
-                        Err(_errors) => debug!("Received errors from config file watcher"),
+                        Err(_error) => debug!("Received error from config file watcher"),
                     },
                     // TODO: should we break or panic in these cases?
                     None => unreachable!()

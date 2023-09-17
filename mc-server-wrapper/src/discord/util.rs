@@ -324,7 +324,7 @@ mod content_format_mentions {
     use twilight_model::{
         channel::{Channel, ChannelType},
         gateway::payload,
-        guild::{Permissions, Role},
+        guild::{Permissions, Role, RoleFlags},
     };
 
     use super::*;
@@ -373,16 +373,17 @@ mod content_format_mentions {
         Event::RoleCreate(payload::incoming::RoleCreate {
             guild_id: Id::new(1),
             role: Role {
-                id: Id::new(2345),
                 color: 0,
                 hoist: false,
+                icon: None,
+                id: Id::new(2345),
                 managed: false,
                 mentionable: true,
-                tags: None,
                 name: "test-role".into(),
                 permissions: Permissions::empty(),
                 position: 0,
-                icon: None,
+                flags: RoleFlags::empty(),
+                tags: None,
                 unicode_emoji: None,
             },
         })

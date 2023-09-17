@@ -6,7 +6,11 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ### Internal
 
-* Replace `tui` with `ratatui` 0.21.0
+* Replace `tui` with `ratatui` 0.23.0
+* Updated `crossterm` to 0.27.0
+* Updated `notify-debouncer-mini` to 0.4.1
+* Updated `toml` to 0.8.0
+* Updated other dependencies
 
 ## [alpha8] - 2023-06-08
 

@@ -106,7 +106,7 @@ impl Config {
     pub fn setup_watcher(
         &self,
         config_filepath: impl Into<PathBuf>,
-    ) -> mpsc::Receiver<Result<Vec<DebouncedEvent>, Vec<notify::Error>>> {
+    ) -> mpsc::Receiver<Result<Vec<DebouncedEvent>, notify::Error>> {
         let (notify_sender, notify_receiver) = mpsc::channel(8);
         let config_filepath = config_filepath.into();
         let handle = tokio::runtime::Handle::current();
@@ -114,7 +114,7 @@ impl Config {
         std::thread::spawn(move || {
             let (tx, rx) = std::sync::mpsc::channel();
 
-            let mut debouncer = new_debouncer(Duration::from_millis(500), None, tx).unwrap();
+            let mut debouncer = new_debouncer(Duration::from_millis(500), tx).unwrap();
 
             debouncer
                 .watcher()
