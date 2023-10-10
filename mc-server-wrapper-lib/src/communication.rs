@@ -44,7 +44,7 @@ pub enum ServerCommand {
     /// Send a message to all players on the server
     ///
     /// Message should be JSON of the following format:
-    /// https://minecraft.gamepedia.com/Raw_JSON_text_format
+    /// https://minecraft.wiki/w/Raw_JSON_text_format
     TellRawAll(String),
     /// Write the given string to the server's stdin as a command
     ///
