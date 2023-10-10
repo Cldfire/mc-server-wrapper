@@ -64,14 +64,21 @@ impl ConsoleMsgSpecific {
             ConsoleMsgSpecific::PlayerAuth { name, uuid }
         } else if console_msg.msg_type == ConsoleMsgType::Info
             && (console_msg.thread_name.starts_with("Async Chat Thread")
-                || console_msg.msg.starts_with('<') && console_msg.thread_name == "Server thread")
+                || (console_msg.msg.starts_with('<')
+                    || console_msg.msg.starts_with("[Not Secure]"))
+                    && console_msg.thread_name == "Server thread")
         {
             let (name, msg) = {
-                let (name, remain) = console_msg
+                // trim prefix from insecure messages.
+                let msg = console_msg
                     .msg
+                    .strip_prefix("[Not Secure] ")
+                    .unwrap_or(&console_msg.msg);
+
+                let (name, remain) = msg
                     // If a > cannot be found, this is not a player message
                     // and therefore we return
-                    .split_at(console_msg.msg.find('>')?);
+                    .split_at(msg.find('>')?);
 
                 // Trim "<" from the player's name and "> " from the msg
                 (name[1..].to_string(), remain[2..].to_string())
