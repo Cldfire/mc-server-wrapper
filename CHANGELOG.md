@@ -4,6 +4,12 @@ Notable `mc-server-wrapper` changes, tracked in the [keep a changelog](https://k
 
 ## [Unreleased]
 
+## [alpha9] - 2023-10-10
+
+### Added
+
+* Added support for insecure chat messages ([#17](https://github.com/Cldfire/mc-server-wrapper/pull/17) - @derspyy)
+
 ### Internal
 
 * Replace `tui` with `ratatui` 0.23.0
@@ -144,7 +150,8 @@ Small release updating some dependencies.
 
 Tagging a first alpha release after a few months of working on the project.
 
-[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha8...HEAD
+[Unreleased]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha9...HEAD
+[alpha9]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha8...alpha9
 [alpha8]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha7...alpha8
 [alpha7]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha6...alpha7
 [alpha6]: https://github.com/Cldfire/mc-server-wrapper/compare/alpha5...alpha6
