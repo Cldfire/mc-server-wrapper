@@ -78,6 +78,21 @@ fn player_msg() {
 }
 
 #[test]
+fn insecure_player_msg() {
+    let msg = "[19:19:48] [Server thread/INFO]: [Not Secure] <despiuvas> hello world! :)";
+    let specific_msg =
+        ConsoleMsgSpecific::try_parse_from(&ConsoleMsg::try_parse_from(msg).unwrap()).unwrap();
+
+    match specific_msg {
+        ConsoleMsgSpecific::PlayerMsg { name, msg } => {
+            assert_eq!(name, "despiuvas");
+            assert_eq!(msg, "hello world! :)");
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
 fn player_login() {
     let msg = "[23:11:12] [Server thread/INFO]: Cldfire[/127.0.0.1:56538] logged in with entity \
         id 121 at (-2.5, 63.0, 256.5)";
