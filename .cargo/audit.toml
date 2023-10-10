@@ -1,0 +1,6 @@
+[advisories]
+# "Tungstenite allows remote attackers to cause a denial of service"
+#
+# Very unapplicable to our usecase (communication with Discord). Will eventually
+# be resolved by a future Twilight update.
+ignore = ["RUSTSEC-2023-0065"]
